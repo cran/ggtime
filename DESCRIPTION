@@ -1,0 +1,54 @@
+Package: ggtime
+Title: Grammar of Graphics and Plot Helpers for Time Series
+        Visualization
+Version: 0.1.0
+Authors@R: c(
+      person(
+        given = "Mitchell",
+        family = "O'Hara-Wild",
+        role = c("aut", "cre"),
+        email = "mail@mitchelloharawild.com",
+        comment = c(ORCID = "0000-0001-6729-7695")
+      ),
+      person(
+        given = "Cynthia A.", 
+        family = "Huang",
+        role = c("aut"), 
+        comment = c(ORCID = "0000-0002-9218-987X")
+      ),
+      person(
+        given = "Matthew", 
+        family = "Kay",
+        role = c("aut"), 
+        comment = c(ORCID = "0000-0001-9446-0419")
+      ),
+      person(
+        given = "Rob",
+        family = "Hyndman",
+        role = c("aut"),
+        comment = c(ORCID = "0000-0002-2140-5352")
+      )
+    )
+Description: Extends the capabilities of 'ggplot2' by providing grammatical
+    elements and plot helpers designed for visualizing temporal patterns. The 
+    package implements a grammar of temporal graphics, which leverages calendar
+    structures to highlight changes over time. The package also provides plot 
+    helper functions to quickly produce commonly used time series graphics,
+    including time plots, season plots, and seasonal sub-series plots.
+License: GPL (>= 3)
+Suggests: testthat (>= 3.0.0), tsibbledata, feasts, fable, ggrepel
+Config/testthat/edition: 3
+Encoding: UTF-8
+RoxygenNote: 7.3.2.9000
+Imports: lifecycle, rlang, timechange, tsibble, fabletools, dplyr,
+        tidyr, ggplot2, lubridate, gtable, scales, vctrs
+NeedsCompilation: no
+Packaged: 2025-06-05 14:11:01 UTC; mitchell
+Author: Mitchell O'Hara-Wild [aut, cre] (ORCID:
+    <https://orcid.org/0000-0001-6729-7695>),
+  Cynthia A. Huang [aut] (ORCID: <https://orcid.org/0000-0002-9218-987X>),
+  Matthew Kay [aut] (ORCID: <https://orcid.org/0000-0001-9446-0419>),
+  Rob Hyndman [aut] (ORCID: <https://orcid.org/0000-0002-2140-5352>)
+Maintainer: Mitchell O'Hara-Wild <mail@mitchelloharawild.com>
+Repository: CRAN
+Date/Publication: 2025-06-10 09:10:02 UTC
