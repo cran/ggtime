@@ -1,7 +1,9 @@
 tsbl_co2 <- as_tsibble(co2)
-tsbl_ped <- tsibble::pedestrian %>%
-  dplyr::filter(Sensor == "Southern Cross Station",
-         yearmonth(Date) == yearmonth("2015 Jan"))
+tsbl_ped <- dplyr::filter(
+  tsibble::pedestrian,
+  Sensor == "Southern Cross Station",
+  yearmonth(Date) == yearmonth("2015 Jan")
+)
 
 test_that("gg_season() plots", {
   p <- gg_season(tsbl_co2, value)
@@ -54,7 +56,7 @@ test_that("gg_season() plot labels", {
     rep(12, 39)
   )
   expect_equal(
-    c(ggplot2::layer_data(p,2)$label, ggplot2::layer_data(p,3)$label),
+    c(ggplot2::layer_data(p, 2)$label, ggplot2::layer_data(p, 3)$label),
     ordered(rep(1959:1997, 2))
   )
 
@@ -78,7 +80,7 @@ test_that("gg_season() facets", {
     rep(12, 39)
   )
   expect_equal(
-    c(ggplot2::layer_data(p,2)$label, ggplot2::layer_data(p,3)$label),
+    c(ggplot2::layer_data(p, 2)$label, ggplot2::layer_data(p, 3)$label),
     ordered(rep(1959:1997, 2))
   )
 
@@ -95,7 +97,7 @@ test_that("gg_subseries() plots", {
 
   expect_equal(
     ggplot2::layer_data(p)$y,
-    tsbl_co2$value[order((seq_along(tsbl_co2$value) - 1)%%12)]
+    tsbl_co2$value[order((seq_along(tsbl_co2$value) - 1) %% 12)]
   )
   expect_equal(
     as.numeric(table(ggplot2::layer_data(p)$PANEL)),
@@ -113,7 +115,7 @@ test_that("gg_subseries() plots", {
 
   expect_equal(
     ggplot2::layer_data(p)$y,
-    tsbl_ped$Count[order((seq_along(tsbl_ped$Count) - 1)%%24)]
+    tsbl_ped$Count[order((seq_along(tsbl_ped$Count) - 1) %% 24)]
   )
   expect_equal(
     as.numeric(table(ggplot2::layer_data(p)$PANEL)),
@@ -133,8 +135,12 @@ test_that("gg_lag() plots", {
 
   expect_equal(
     ggplot2::layer_data(p, 2)$x,
-    do.call(c, map(seq_len(9), function(i)
-      tsbl_co2$value[seq_len(length(tsbl_co2$value) - i)]))
+    do.call(
+      c,
+      map(seq_len(9), function(i) {
+        tsbl_co2$value[seq_len(length(tsbl_co2$value) - i)]
+      })
+    )
   )
   expect_equal(
     as.numeric(table(ggplot2::layer_data(p, 2)$PANEL)),
@@ -152,8 +158,12 @@ test_that("gg_lag() plots", {
 
   expect_equal(
     ggplot2::layer_data(p, 2)$x,
-    do.call(c, map(c(1, 4, 9),
-                   function(i) tsbl_co2$value[seq_len(length(tsbl_co2$value) - i)]))
+    do.call(
+      c,
+      map(c(1, 4, 9), function(i) {
+        tsbl_co2$value[seq_len(length(tsbl_co2$value) - i)]
+      })
+    )
   )
   expect_equal(
     as.numeric(table(ggplot2::layer_data(p, 2)$PANEL)),
@@ -172,7 +182,8 @@ test_that("gg_tsdisplay() plots", {
   p <- gg_tsdisplay(tsbl_co2, value)
 
   expect_s3_class(
-    p, "gg_tsensemble"
+    p,
+    "gg_tsensemble"
   )
 
   expect_equal(
@@ -247,7 +258,7 @@ test_that("gg_tsdisplay() plots", {
 test_that("gg_arma() plots", {
   skip_if_not_installed("fable")
   mdl <- tsbl_co2 %>%
-    fabletools::model(fable::ARIMA(value ~ 0 + pdq(1,1,1) + PDQ(1,1,2)))
+    fabletools::model(fable::ARIMA(value ~ 0 + pdq(1, 1, 1) + PDQ(1, 1, 2)))
 
   p <- gg_arma(mdl)
   smmry <- fabletools::glance(mdl)
@@ -256,11 +267,11 @@ test_that("gg_arma() plots", {
 
   expect_equal(
     ggplot2::layer_data(p, 4)$y,
-    c(Im(1/ar_roots), Im(1/ma_roots))
+    c(Im(1 / ar_roots), Im(1 / ma_roots))
   )
   expect_equal(
     ggplot2::layer_data(p, 4)$x,
-    c(Re(1/ar_roots), Re(1/ma_roots))
+    c(Re(1 / ar_roots), Re(1 / ma_roots))
   )
   expect_equal(
     ggplot2::layer_data(p, 4)$PANEL,

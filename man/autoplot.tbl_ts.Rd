@@ -25,11 +25,8 @@ tsibble contains a multiple keys, separate time series will be identified by
 colour.
 }
 \examples{
-\dontshow{if (requireNamespace("fable", quietly = TRUE)) withAutoprint(\{ # examplesIf}
-library(fable)
-library(tsibbledata)
-library(tsibble)
-
+\dontshow{if (requireNamespace("tsibbledata", quietly = TRUE)) withAutoprint(\{ # examplesIf}
+library(dplyr)
 tsibbledata::gafa_stock \%>\%
  autoplot(vars(Close, log(Close)))
 \dontshow{\}) # examplesIf}

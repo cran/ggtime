@@ -1,24 +1,24 @@
 globalVariables("all_of")
 
-format_time <- function(x, format, ...){
-  if(format == "%Y W%V"){
+format_time <- function(x, format, ...) {
+  if (format == "%Y W%V") {
     return(format(yearweek(x)))
   }
   out <- format(x, format = format)
   if (grepl("%q", format)) {
-    qtr <- 1 + as.numeric(format(as.Date(x), "%m"))%/%3
-    out <- split(out, qtr) %>% imap(function(x, rpl) gsub("%q", rpl, x)) %>% unsplit(qtr)
+    qtr <- 1 + as.numeric(format(as.Date(x), "%m")) %/% 3
+    out <- split(out, qtr) %>%
+      imap(function(x, rpl) gsub("%q", rpl, x)) %>%
+      unsplit(qtr)
   }
 
-  lvls <- switch(format,
-                 `W%V` = sprintf("W%02d", 1:53),
-                 unique(out[order(x)]))
+  lvls <- switch(format, `W%V` = sprintf("W%02d", 1:53), unique(out[order(x)]))
 
   ordered(out, levels = lvls)
 }
 
-tz_units_since <- function(x){
-  if(!is.null(attr(x, "tz"))){
+tz_units_since <- function(x) {
+  if (!is.null(attr(x, "tz"))) {
     x <- as.POSIXct(`attr<-`(as.POSIXlt(x), "tzone", "UTC"))
   }
   as.double(x)
@@ -29,20 +29,28 @@ tz_units_since <- function(x){
 # 2. Return if descriptor is distinct across groups
 # 3. If descriptor varies across groups, add it to list
 # 4. Go to next largest descriptor and repeat from 2.
-time_identifier <- function(idx, period, base = NULL, within = NULL, interval){
-  if(is.null(period)){
+time_identifier <- function(idx, period, base = NULL, within = NULL, interval) {
+  if (is.null(period)) {
     return(rep(NA, length(idx)))
   }
 
   # Early return for years in weeks, as years are structured differently in context of weeks
-  if (identical(period, lubridate::years(1)) && identical(base, lubridate::weeks(1))){
+  if (
+    identical(period, lubridate::years(1)) &&
+      identical(base, lubridate::weeks(1))
+  ) {
     return(list(facet_id = NA, id = format_time(idx, format = "%G")))
   }
 
   grps <- floor_tsibble_date(idx, period)
 
-  facet_grps <- if(!is.null(within)){
-    time_identifier(time_offset_origin(floor_tsibble_date(idx, period), within), period = period, base = period, interval = period)$id
+  facet_grps <- if (!is.null(within)) {
+    time_identifier(
+      time_offset_origin(floor_tsibble_date(idx, period), within),
+      period = period,
+      base = period,
+      interval = period
+    )$id
   } else {
     rep_along(idx, FALSE)
   }
@@ -71,43 +79,60 @@ time_identifier <- function(idx, period, base = NULL, within = NULL, interval){
     Datetime = "%x %X"
   )
   # Remove unreasonable formats for a given interval
-  if(!is_empty(interval)){
-    if(interval >= months(1)){
+  if (!is_empty(interval)) {
+    if (interval >= months(1)) {
       formats <- formats[c("Month", "Year", "Yearmonth", "Date")]
-    } else if (interval >= lubridate::weeks(1)){
-      formats <- formats[c("Week", "Month", "Year",
-                           "Yearweek", "Yearmonth", "Date")]
-    } else if (interval >= lubridate::days(1)){
-      formats <- formats[c("Weekday", "Week", "Month", "Year",
-                           "Yearweek", "Yearmonth", "Date")]
+    } else if (interval >= lubridate::weeks(1)) {
+      formats <- formats[c(
+        "Week",
+        "Month",
+        "Year",
+        "Yearweek",
+        "Yearmonth",
+        "Date"
+      )]
+    } else if (interval >= lubridate::days(1)) {
+      formats <- formats[c(
+        "Weekday",
+        "Week",
+        "Month",
+        "Year",
+        "Yearweek",
+        "Yearmonth",
+        "Date"
+      )]
     }
   }
-
 
   # Check if the format uniquely identifies the group
-  for(fmt in formats){
-    for(fct in fmt_idx_grp){
+  for (fmt in formats) {
+    for (fct in fmt_idx_grp) {
       found_format <- FALSE
       id <- rep(NA_character_, length(fct))
-      for(i in seq_along(fct)){
+      for (i in seq_along(fct)) {
         val <- unique(format_time(fct[[i]], format = fmt))
-        if(length(val) > 1) break
+        if (length(val) > 1) {
+          break
+        }
         id[i] <- as.character(val)
       }
-      if(is.na(id[length(id)])) break
-      if(anyDuplicated(id)) break
+      if (is.na(id[length(id)])) {
+        break
+      }
+      if (anyDuplicated(id)) {
+        break
+      }
       found_format <- TRUE
     }
-    if(found_format) break
+    if (found_format) break
   }
 
-  out <- if(found_format){
+  out <- if (found_format) {
     format_time(idx, format = fmt)
-  }
-  else{
+  } else {
     # Default to time ranges
-    map2(fmt_idx_grp, split(grps, facet_grps), function(x, grps){
-      map(x, function(y){
+    map2(fmt_idx_grp, split(grps, facet_grps), function(x, grps) {
+      map(x, function(y) {
         rep(paste0(range(y), collapse = " - "), length(y))
       }) %>%
         unsplit(as.factor(format(grps)))
@@ -116,12 +141,12 @@ time_identifier <- function(idx, period, base = NULL, within = NULL, interval){
       ordered()
   }
   list(
-    facet_id = if(!is.null(within)) facet_grps else NA,
+    facet_id = if (!is.null(within)) facet_grps else NA,
     id = out
   )
 }
 
-within_time_identifier <- function(x){
+within_time_identifier <- function(x) {
   formats <- list(
     Year = "%Y",
     Quarter = "Q%q",
@@ -144,8 +169,8 @@ within_time_identifier <- function(x){
   y <- x
   x <- unique(x[!is.na(x)])
 
-  for(fmt in formats){
-    if(sum(duplicated(format_time(x[-length(x)], format = fmt))) == 0){
+  for (fmt in formats) {
+    if (sum(duplicated(format_time(x[-length(x)], format = fmt))) == 0) {
       break
     }
   }
@@ -153,20 +178,21 @@ within_time_identifier <- function(x){
   format_time(y, format = fmt)
 }
 
-guess_plot_var <- function(x, y){
-  if(quo_is_null(enquo(y))){
+guess_plot_var <- function(x, y) {
+  if (quo_is_null(enquo(y))) {
     mv <- measured_vars(x)
     pos <- which(vapply(x[mv], is.numeric, logical(1L)))
-    if(is_empty(pos)) {
-      abort("Could not automatically identify an appropriate plot variable, please specify the variable to plot.")
+    if (is_empty(pos)) {
+      abort(
+        "Could not automatically identify an appropriate plot variable, please specify the variable to plot."
+      )
     }
     inform(sprintf(
       "Plot variable not specified, automatically selected `y = %s`",
       mv[pos[1]]
     ))
     sym(mv[pos[1]])
-  }
-  else{
+  } else {
     get_expr(enexpr(y))
   }
 }
@@ -223,13 +249,24 @@ guess_plot_var <- function(x, y){
 #' @importFrom fabletools get_frequencies
 #' @importFrom dplyr group_by summarise mutate filter
 #' @export
-gg_season <- function(data, y = NULL, period = NULL, facet_period = NULL,
-                      max_col = Inf, max_col_discrete = 7,
-                      pal = scales::hue_pal()(9), polar = FALSE,
-                      labels = c("none", "left", "right", "both"),
-                      labels_repel = FALSE,
-                      labels_left_nudge = 0, labels_right_nudge = 0,
-                      ...){
+gg_season <- function(
+  data,
+  y = NULL,
+  period = NULL,
+  facet_period = NULL,
+  max_col = Inf,
+  max_col_discrete = 7,
+  pal = scales::hue_pal()(9),
+  polar = FALSE,
+  labels = c("none", "left", "right", "both"),
+  labels_repel = FALSE,
+  labels_left_nudge = 0,
+  labels_right_nudge = 0,
+  ...
+) {
+  # Guide users from {feasts} to {ggtime}
+  ggtime_migrate_deprecate(match.call(), "feasts", "0.4.2")
+
   y <- guess_plot_var(data, !!enquo(y))
 
   labels <- match.arg(labels)
@@ -239,34 +276,40 @@ gg_season <- function(data, y = NULL, period = NULL, facet_period = NULL,
   keys <- key(data)
   ts_interval <- interval_to_period(interval(data))
 
-  if(is.null(period)){
+  if (is.null(period)) {
     period <- names(get_frequencies(period, data, .auto = "largest"))
   }
-  if(is.numeric(period)){
-    period <- period*ts_interval
+  if (is.numeric(period)) {
+    period <- period * ts_interval
   }
   period <- lubridate::as.period(period)
-  if(period <= ts_interval){
+  if (period <= ts_interval) {
     abort("The data must contain at least one observation per seasonal period.")
   }
 
-  if(!is.null(facet_period)){
-    if(is.numeric(facet_period)){
-      facet_period <- facet_period*ts_interval
+  if (!is.null(facet_period)) {
+    if (is.numeric(facet_period)) {
+      facet_period <- facet_period * ts_interval
     }
     facet_period <- lubridate::as.period(facet_period)
 
-    if(facet_period <= ts_interval){
-      abort("The data must contain at least one observation per seasonal period.")
+    if (facet_period <= ts_interval) {
+      abort(
+        "The data must contain at least one observation per seasonal period."
+      )
     }
   }
 
   data <- as_tibble(data)
-  data[c("facet_id", "id")] <- time_identifier(data[[idx]], period,
-                                               within = facet_period, interval = ts_interval)
+  data[c("facet_id", "id")] <- time_identifier(
+    data[[idx]],
+    period,
+    within = facet_period,
+    interval = ts_interval
+  )
   data[idx] <- time_offset_origin(data[[idx]], period)
 
-  if(polar){
+  if (polar) {
     extra_x <- data %>%
       group_by(!!sym("facet_id"), !!sym("id")) %>%
       summarise(
@@ -281,9 +324,14 @@ gg_season <- function(data, y = NULL, period = NULL, facet_period = NULL,
 
   num_ids <- length(unique(data[["id"]]))
 
-  mapping <- aes(x = !!sym(idx), y = !!y, colour = unclass(!!sym("id")), group = !!sym("id"))
+  mapping <- aes(
+    x = !!sym(idx),
+    y = !!y,
+    colour = unclass(!!sym("id")),
+    group = !!sym("id")
+  )
 
-  if(num_ids > max_col){
+  if (num_ids > max_col) {
     mapping$colour <- NULL
   }
 
@@ -291,7 +339,7 @@ gg_season <- function(data, y = NULL, period = NULL, facet_period = NULL,
     geom_line(...) +
     ggplot2::labs(colour = NULL)
 
-  if(num_ids <= max_col){
+  if (num_ids <= max_col) {
     breaks <- if (num_ids <= max_col_discrete) {
       seq_len(num_ids)
     } else {
@@ -305,84 +353,113 @@ gg_season <- function(data, y = NULL, period = NULL, facet_period = NULL,
       )
   }
 
-  if(num_ids <= max_col_discrete){
+  if (num_ids <= max_col_discrete) {
     p <- p + ggplot2::guides(colour = ggplot2::guide_legend())
   }
 
-  if(!is.null(facet_period)){
-    p <- p + facet_grid(rows = vars(!!!keys),
-                        cols = vars(!!sym("facet_id")),
-                        scales = ifelse(n_key > 1, "free", "free_x"))
-  }
-  else if(n_key > 1){
-    p <- p + facet_grid(
-      rows = vars(!!!lapply(keys, function(x) expr(format(!!x)))),
-      scales = "free_y")
+  if (!is.null(facet_period)) {
+    p <- p +
+      facet_grid(
+        rows = vars(!!!keys),
+        cols = vars(!!sym("facet_id")),
+        scales = ifelse(n_key > 1, "free", "free_x")
+      )
+  } else if (n_key > 1) {
+    p <- p +
+      facet_grid(
+        rows = vars(!!!lapply(keys, function(x) expr(format(!!x)))),
+        scales = "free_y"
+      )
   }
 
-  if(inherits(data[[idx]], "Date")){
-    p <- p + ggplot2::scale_x_date(breaks = function(limit){
-      breaks <- if(suppressMessages(len <- period/ts_interval) <= 12){
-        ggplot2::scale_x_date()$trans$breaks(limit, n = len)
-      } else{
-        ggplot2::scale_x_date()$trans$breaks(limit)
-      }
-      unique(time_offset_origin(within_bounds(breaks, limit), period))
-    }, labels = within_time_identifier)
-  } else if(inherits(data[[idx]], "POSIXct")){
-    p <- p + ggplot2::scale_x_datetime(breaks = function(limit){
-      breaks <- if(period == lubridate::weeks(1)){
-        ggplot2::scale_x_datetime()$trans$breaks(limit, n = 7)
-      }
-      else{
-        ggplot2::scale_x_datetime()$trans$breaks(limit)
-      }
-      unique(time_offset_origin(within_bounds(breaks, limit), period))
-    }, labels = within_time_identifier)
+  if (inherits(data[[idx]], "Date")) {
+    p <- p +
+      ggplot2::scale_x_date(
+        breaks = function(limit) {
+          breaks <- if (suppressMessages(len <- period / ts_interval) <= 12) {
+            ggplot2::scale_x_date()$trans$breaks(limit, n = len)
+          } else {
+            ggplot2::scale_x_date()$trans$breaks(limit)
+          }
+          unique(time_offset_origin(within_bounds(breaks, limit), period))
+        },
+        labels = within_time_identifier
+      )
+  } else if (inherits(data[[idx]], "POSIXct")) {
+    p <- p +
+      ggplot2::scale_x_datetime(
+        breaks = function(limit) {
+          breaks <- if (period == lubridate::weeks(1)) {
+            ggplot2::scale_x_datetime()$trans$breaks(limit, n = 7)
+          } else {
+            ggplot2::scale_x_datetime()$trans$breaks(limit)
+          }
+          unique(time_offset_origin(within_bounds(breaks, limit), period))
+        },
+        labels = within_time_identifier
+      )
   } else {
     scale_fn <- paste0("scale_x_", ggplot2::scale_type(data[[idx]])[1])
-    scale_fn <- if(exists(scale_fn, parent.frame(), mode = "function")){
+    scale_fn <- if (exists(scale_fn, parent.frame(), mode = "function")) {
       get(scale_fn, parent.frame(), mode = "function")
     } else {
       get(scale_fn, asNamespace("feasts"), mode = "function")
     }
-    p <- p + scale_fn(
-      breaks = function(limit){
-        breaks <- if(suppressMessages(len <- period/ts_interval) <= 12){
-          vctrs::vec_restore(ggplot2::scale_x_date()$trans$breaks(as.Date(limit), n = len), limit)
-        } else{
-          scale_fn()$trans$breaks(limit)
-        }
-        unique(time_offset_origin(within_bounds(breaks, limit), period))
-      }, labels = within_time_identifier)
+    p <- p +
+      scale_fn(
+        breaks = function(limit) {
+          breaks <- if (suppressMessages(len <- period / ts_interval) <= 12) {
+            vctrs::vec_restore(
+              ggplot2::scale_x_date()$trans$breaks(as.Date(limit), n = len),
+              limit
+            )
+          } else {
+            scale_fn()$trans$breaks(limit)
+          }
+          unique(time_offset_origin(within_bounds(breaks, limit), period))
+        },
+        labels = within_time_identifier
+      )
   }
 
-  if(polar){
+  if (polar) {
     p <- p + ggplot2::coord_polar()
   }
 
-  if(labels != "none"){
-    labeller <- if(labels_repel) {
-      require_package("ggrepel")
-      function(...) ggrepel::geom_text_repel(..., direction = "y", segment.colour = NA)
+  if (labels != "none") {
+    labeller <- if (labels_repel) {
+      rlang::check_installed("ggrepel")
+      function(...) {
+        ggrepel::geom_text_repel(..., direction = "y", segment.colour = NA)
+      }
     } else {
       ggplot2::geom_text
     }
-    if(labels %in% c("left", "both")){
+    if (labels %in% c("left", "both")) {
       labels_left <- data %>%
         group_by(!!!syms(c("facet_id", "id"))) %>%
         filter(!!sym(idx) %in% min(!!sym(idx)))
 
-      p <- p + labeller(aes(label = !!sym("id")), data = labels_left,
-                        hjust = "outward", nudge_x = labels_left_nudge)
+      p <- p +
+        labeller(
+          aes(label = !!sym("id")),
+          data = labels_left,
+          hjust = "outward",
+          nudge_x = labels_left_nudge
+        )
     }
-    if(labels %in% c("right", "both")){
+    if (labels %in% c("right", "both")) {
       labels_right <- data %>%
         group_by(!!!syms(c("facet_id", "id"))) %>%
         filter(!!sym(idx) %in% max(!!sym(idx)))
 
-      p <- p + labeller(aes(label = !!sym("id")), data = labels_right,
-                        hjust = "outward", nudge_x = labels_right_nudge)
+      p <- p +
+        labeller(
+          aes(label = !!sym("id")),
+          data = labels_right,
+          hjust = "outward",
+          nudge_x = labels_right_nudge
+        )
     }
 
     p <- p + ggplot2::guides(colour = "none")
@@ -426,7 +503,10 @@ gg_season <- function(data, y = NULL, period = NULL, facet_period = NULL,
 #'
 #' @importFrom ggplot2 facet_grid
 #' @export
-gg_subseries <- function(data, y = NULL, period = NULL, ...){
+gg_subseries <- function(data, y = NULL, period = NULL, ...) {
+  # Guide users from {feasts} to {ggtime}
+  ggtime_migrate_deprecate(match.call(), "feasts", "0.4.2")
+
   y <- guess_plot_var(data, !!enquo(y))
   n_key <- n_keys(data)
   keys <- key(data)
@@ -434,14 +514,14 @@ gg_subseries <- function(data, y = NULL, period = NULL, ...){
   idx <- index(data)
   ts_interval <- interval_to_period(interval(data))
 
-  if(is.null(period)){
+  if (is.null(period)) {
     period <- names(get_frequencies(period, data, .auto = "largest"))
   }
-  if(is.numeric(period)){
-    period <- period*ts_interval
+  if (is.numeric(period)) {
+    period <- period * ts_interval
   }
   period <- lubridate::as.period(period)
-  if(period <= 1){
+  if (period <= 1) {
     abort("The data must contain at least one observation per seasonal period.")
   }
 
@@ -454,12 +534,16 @@ gg_subseries <- function(data, y = NULL, period = NULL, ...){
     group_by(!!sym("id"), !!!keys) %>%
     mutate(.yint = mean(!!sym(".yint"), na.rm = TRUE))
 
-  fct_labeller <- if(inherits(data[["id"]], c("yearquarter", "yearmonth", "yearweek", "POSIXt", "Date"))){
+  fct_labeller <- if (
+    inherits(
+      data[["id"]],
+      c("yearquarter", "yearmonth", "yearweek", "POSIXt", "Date")
+    )
+  ) {
     within_time_identifier
-  } else if(is.numeric(data[["id"]])) {
+  } else if (is.numeric(data[["id"]])) {
     function(x) format(x - 1969)
-  }
-  else {
+  } else {
     format
   }
 
@@ -468,16 +552,17 @@ gg_subseries <- function(data, y = NULL, period = NULL, ...){
     facet_grid(
       rows = vars(!!!lapply(keys, function(x) expr(format(!!x)))),
       cols = vars(fct_labeller(!!sym("id"))),
-      scales = "free_y") +
+      scales = "free_y"
+    ) +
     ggplot2::geom_hline(aes(yintercept = !!sym(".yint")), colour = "blue")
 
-  if(inherits(data[[as_name(idx)]], "Date")){
+  if (inherits(data[[as_name(idx)]], "Date")) {
     p <- p + ggplot2::scale_x_date(labels = within_time_identifier)
-  } else if(inherits(data[[as_name(idx)]], "POSIXct")){
+  } else if (inherits(data[[as_name(idx)]], "POSIXct")) {
     p <- p + ggplot2::scale_x_datetime(labels = within_time_identifier)
   } else {
     scale_fn <- paste0("scale_x_", ggplot2::scale_type(data[[as_name(idx)]])[1])
-    scale_fn <- if(exists(scale_fn, parent.frame(), mode = "function")){
+    scale_fn <- if (exists(scale_fn, parent.frame(), mode = "function")) {
       get(scale_fn, parent.frame(), mode = "function")
     } else {
       get(scale_fn, asNamespace("feasts"), mode = "function")
@@ -517,27 +602,39 @@ gg_subseries <- function(data, y = NULL, period = NULL, ...){
 #' @importFrom ggplot2 ggplot aes geom_path geom_abline facet_wrap
 #' @importFrom tidyr gather
 #' @export
-gg_lag <- function(data, y = NULL, period = NULL, lags = 1:9,
-                   geom = c("path", "point"),
-                   arrow = FALSE, ...){
-  if(isTRUE(arrow)){
+gg_lag <- function(
+  data,
+  y = NULL,
+  period = NULL,
+  lags = 1:9,
+  geom = c("path", "point"),
+  arrow = FALSE,
+  ...
+) {
+  # Guide users from {feasts} to {ggtime}
+  ggtime_migrate_deprecate(match.call(), "feasts", "0.4.2")
+
+  if (isTRUE(arrow)) {
     arrow <- grid::arrow(length = grid::unit(0.05, "npc"))
-  }
-  else if (isFALSE(arrow)){
+  } else if (isFALSE(arrow)) {
     arrow <- NULL
   }
 
   y <- guess_plot_var(data, !!enquo(y))
   geom <- match.arg(geom)
-  lag_geom <- switch(geom, path = geom_path, point = function(..., arrow) geom_point(...))
+  lag_geom <- switch(geom, path = geom_path, point = function(..., arrow) {
+    geom_point(...)
+  })
 
-  if(n_keys(data) > 1){
-    abort("The data provided to contains more than one time series. Please filter a single time series to use `gg_lag()`")
+  if (n_keys(data) > 1) {
+    abort(
+      "The data provided to contains more than one time series. Please filter a single time series to use `gg_lag()`"
+    )
   }
 
   period <- get_frequencies(period, data, .auto = "smallest")
 
-  period_units <- period*default_time_units(interval(data))
+  period_units <- period * default_time_units(interval(data))
 
   lag_exprs <- map(lags, function(lag) expr(lag(!!y, !!lag))) %>%
     set_names(paste0(".lag_", lags))
@@ -547,21 +644,30 @@ gg_lag <- function(data, y = NULL, period = NULL, lags = 1:9,
   data <- data %>%
     as_tibble %>%
     mutate(
-      season = within_time_identifier(!!idx - period_units*(tz_units_since(!!idx)%/%period_units)),
-      !!!lag_exprs)
+      season = within_time_identifier(
+        !!idx - period_units * (tz_units_since(!!idx) %/% period_units)
+      ),
+      !!!lag_exprs
+    )
 
   num_na <- eval_tidy(expr(sum(is.na(!!y))), data = data)
-  if(num_na > 0){
+  if (num_na > 0) {
     warn(sprintf("Removed %i rows containing missing values (gg_lag).", num_na))
   }
 
   data <- data %>%
     gather(".lag", ".value", !!names(lag_exprs)) %>%
-    mutate(.lag = factor(!!sym(".lag"), levels = names(lag_exprs), labels = paste("lag", lags))) %>%
+    mutate(
+      .lag = factor(
+        !!sym(".lag"),
+        levels = names(lag_exprs),
+        labels = paste("lag", lags)
+      )
+    ) %>%
     filter(!is.na(!!sym(".value")) & !is.na(!!y))
 
   mapping <- aes(x = !!sym(".value"), y = !!y)
-  if(period > 1){
+  if (period > 1) {
     mapping$colour <- sym("season")
   }
 
@@ -569,7 +675,7 @@ gg_lag <- function(data, y = NULL, period = NULL, lags = 1:9,
     ggplot(mapping) +
     geom_abline(colour = "gray", linetype = "dashed") +
     lag_geom(..., arrow = arrow) +
-    facet_wrap(~ .lag) +
+    facet_wrap(~.lag) +
     ggplot2::theme(aspect.ratio = 1) +
     xlab(paste0("lag(", as_string(y), ", n)"))
 }
@@ -610,23 +716,42 @@ gg_lag <- function(data, y = NULL, period = NULL, lags = 1:9,
 #' @importFrom ggplot2 ggplot aes geom_point geom_histogram ylim
 #' @importFrom stats na.exclude complete.cases
 #' @export
-gg_tsdisplay <- function(data, y = NULL, plot_type = c("auto", "partial", "season", "histogram", "scatter", "spectrum"),
-                         lag_max = NULL){
-  if(n_keys(data) > 1){
-    abort("The data provided to contains more than one time series. Please filter a single time series to use `gg_tsdisplay()`")
+gg_tsdisplay <- function(
+  data,
+  y = NULL,
+  plot_type = c(
+    "auto",
+    "partial",
+    "season",
+    "histogram",
+    "scatter",
+    "spectrum"
+  ),
+  lag_max = NULL
+) {
+  # Guide users from {feasts} to {ggtime}
+  ggtime_migrate_deprecate(match.call(), "feasts", "0.4.2")
+
+  if (n_keys(data) > 1) {
+    abort(
+      "The data provided to contains more than one time series. Please filter a single time series to use `gg_tsdisplay()`"
+    )
   }
-  require_package("grid")
-  require_package("feasts")
+  rlang::check_installed("grid")
+  rlang::check_installed("feasts")
 
   y <- guess_plot_var(data, !!enquo(y))
 
   plot_type <- match.arg(plot_type)
-  if(plot_type == "auto"){
+  if (plot_type == "auto") {
     period <- get_frequencies(NULL, data, .auto = "all")
-    if(all(period <= 1)){
-      plot_type <- if(any(is.na(eval_tidy(y, data = data)))) "partial" else "spectrum"
-    }
-    else{
+    if (all(period <= 1)) {
+      plot_type <- if (any(is.na(eval_tidy(y, data = data)))) {
+        "partial"
+      } else {
+        "spectrum"
+      }
+    } else {
       plot_type <- "season"
     }
   }
@@ -641,7 +766,7 @@ gg_tsdisplay <- function(data, y = NULL, plot_type = c("auto", "partial", "seaso
 
   p2 <- autoplot(feasts::ACF(data, !!y, lag_max = lag_max))
 
-  if(plot_type == "partial"){
+  if (plot_type == "partial") {
     p3 <- autoplot(feasts::PACF(data, !!y, lag_max = lag_max))
 
     # Match y-axis range across ACF and PACF
@@ -650,31 +775,41 @@ gg_tsdisplay <- function(data, y = NULL, plot_type = c("auto", "partial", "seaso
     yrange <- range(c(p2_yrange, p3_yrange))
     p2 <- p2 + ylim(yrange)
     p3 <- p3 + ylim(yrange)
-  } else if(plot_type == "season"){
+  } else if (plot_type == "season") {
     p3 <- gg_season(data, !!y)
-  } else if(plot_type == "histogram"){
+  } else if (plot_type == "histogram") {
     p3 <- ggplot(data, aes(x = !!y)) +
-      geom_histogram(bins = min(500, grDevices::nclass.FD(na.exclude(data[[as_name(y)]])))) +
+      geom_histogram(
+        bins = min(500, grDevices::nclass.FD(na.exclude(data[[as_name(y)]])))
+      ) +
       ggplot2::geom_rug()
-  } else if(plot_type == "scatter"){
+  } else if (plot_type == "scatter") {
     p3 <- data %>%
-      mutate(!!paste0(as_name(y),"_lag") := lag(!!y, 1)) %>%
-      ggplot(aes(y = !!y, x = !!sym(paste0(as_name(y),"_lag")))) +
+      mutate(!!paste0(as_name(y), "_lag") := lag(!!y, 1)) %>%
+      ggplot(aes(y = !!y, x = !!sym(paste0(as_name(y), "_lag")))) +
       geom_point() +
-      xlab(expression(Y[t - 1])) + ylab(expression(Y[t]))
-  } else if(plot_type == "spectrum"){
+      xlab(expression(Y[t - 1])) +
+      ylab(expression(Y[t]))
+  } else if (plot_type == "spectrum") {
     spec <- safely(stats::spec.ar)(eval_tidy(y, data), plot = FALSE)
 
-    p3 <- if (is.null(spec[["result"]])){
-      if(spec$error$message == "missing values in object"){
-        warn("Spectrum plot could not be shown as the data contains missing values. Consider using a different `plot_type`.")
-      }
-      else {
-        warn(sprintf("Spectrum plot could not be shown as an error occurred: %s", spec$error$message))
+    p3 <- if (is.null(spec[["result"]])) {
+      if (spec$error$message == "missing values in object") {
+        warn(
+          "Spectrum plot could not be shown as the data contains missing values. Consider using a different `plot_type`."
+        )
+      } else {
+        warn(sprintf(
+          "Spectrum plot could not be shown as an error occurred: %s",
+          spec$error$message
+        ))
       }
       ggplot() + ggplot2::labs(x = "frequency", y = "spectrum")
     } else {
-      tibble(spectrum = drop(spec[["result"]]$spec), frequency = spec[["result"]]$freq) %>%
+      tibble(
+        spectrum = drop(spec[["result"]]$spec),
+        frequency = spec[["result"]]$freq
+      ) %>%
         ggplot(aes(x = !!sym("frequency"), y = !!sym("spectrum"))) +
         geom_line() +
         ggplot2::scale_y_log10()
@@ -714,30 +849,53 @@ gg_tsdisplay <- function(data, y = NULL, plot_type = c("auto", "partial", "seaso
 #' @importFrom ggplot2 ggplot aes geom_point geom_histogram ylim
 #' @importFrom stats na.exclude complete.cases
 #' @export
-gg_tsresiduals <- function(data, type = "innovation", plot_type = "histogram", ...){
-  if(!fabletools::is_mable(data)){
-    abort("gg_tsresiduals() must be used with a mable containing only one model.")
+gg_tsresiduals <- function(
+  data,
+  type = "innovation",
+  plot_type = "histogram",
+  ...
+) {
+  # Guide users from {feasts} to {ggtime}
+  ggtime_migrate_deprecate(match.call(), "feasts", "0.4.2")
+
+  if (!fabletools::is_mable(data)) {
+    abort(
+      "gg_tsresiduals() must be used with a mable containing only one model."
+    )
   }
 
   data <- stats::residuals(data, type = type)
-  if(n_keys(data) > 1){
-    abort("gg_tsresiduals() must be used with a mable containing only one model.")
+  if (n_keys(data) > 1) {
+    abort(
+      "gg_tsresiduals() must be used with a mable containing only one model."
+    )
   }
 
   out <- gg_tsdisplay(data, !!sym(".resid"), plot_type = plot_type, ...)
   out[[1]] <- out[[1]] +
-    ggplot2::ylab(sub("([[:alpha:]])(.+)", "\\U\\1\\L\\2 residuals", type, perl=TRUE))
+    ggplot2::ylab(sub(
+      "([[:alpha:]])(.+)",
+      "\\U\\1\\L\\2 residuals",
+      type,
+      perl = TRUE
+    ))
   out
 }
 
 #' @export
-`+.gg_tsensemble` <- function(e1, e2){
+`+.gg_tsensemble` <- function(e1, e2) {
   e1[[1]] <- e1[[1]] + e2
   e1
 }
 
 #' @export
-print.gg_tsensemble <- function(x, ...){
+chooseOpsMethod.gg_tsensemble <- function(x, y, mx, my, cl, reverse) {
+  # Always use the gg_tsensemble method
+  TRUE
+}
+
+#' @export
+print.gg_tsensemble <- function(x, ...) {
   x <- lapply(x, ggplot2::ggplotGrob)
 
   gt <- gtable::gtable(
@@ -746,10 +904,14 @@ print.gg_tsensemble <- function(x, ...){
     widths = grid::unit(rep(1, 2), "null")
   )
   gt <- gtable::gtable_add_grob(
-    gt, x,
-    t = c(1, 2, 2), b = c(1, 2, 2),
-    l = c(1, 1, 2), r = c(2, 1, 2),
-    z = seq_along(x), clip = "off"
+    gt,
+    x,
+    t = c(1, 2, 2),
+    b = c(1, 2, 2),
+    l = c(1, 1, 2),
+    r = c(2, 1, 2),
+    z = seq_along(x),
+    clip = "off"
   )
   grid.draw(gt)
 }
@@ -788,9 +950,14 @@ grid.draw.gg_tsensemble <- function(x, recording = TRUE) {
 #'   gg_arma()
 #' }
 #' @export
-gg_arma <- function(data){
-  if(!fabletools::is_mable(data)){
-    abort("gg_arma() must be used with a mable containing models that compute ARMA roots")
+gg_arma <- function(data) {
+  # Guide users from {feasts} to {ggtime}
+  ggtime_migrate_deprecate(match.call(), "feasts", "0.4.2")
+
+  if (!fabletools::is_mable(data)) {
+    abort(
+      "gg_arma() must be used with a mable containing models that compute ARMA roots"
+    )
   }
 
   fcts <- c(key(data), sym(".model"))
@@ -800,15 +967,30 @@ gg_arma <- function(data){
     gather("type", "root", !!sym("ar_roots"), !!sym("ma_roots")) %>%
     unnest_tbl("root") %>%
     filter(!is.na(!!sym("root"))) %>%
-    mutate(type = factor(!!sym("type"), levels = c("ar_roots", "ma_roots"),
-                         labels = c("AR roots", "MA roots")),
-           UnitCircle = factor(abs(1/!!sym("root")) > 1, levels = c(TRUE, FALSE),
-                               labels = c("Outside", "Within")))
+    mutate(
+      type = factor(
+        !!sym("type"),
+        levels = c("ar_roots", "ma_roots"),
+        labels = c("AR roots", "MA roots")
+      ),
+      UnitCircle = factor(
+        abs(1 / !!sym("root")) > 1,
+        levels = c(TRUE, FALSE),
+        labels = c("Outside", "Within")
+      )
+    )
 
-  ggplot(data, aes(x = Re(1/!!sym("root")), y = Im(1/!!sym("root")),
-                   colour = !!sym("UnitCircle"))) +
+  ggplot(
+    data,
+    aes(
+      x = Re(1 / !!sym("root")),
+      y = Im(1 / !!sym("root")),
+      colour = !!sym("UnitCircle")
+    )
+  ) +
     ggplot2::annotate(
-      "path", x = cos(seq(0, 2 * pi, length.out = 100)),
+      "path",
+      x = cos(seq(0, 2 * pi, length.out = 100)),
       y = sin(seq(0, 2 * pi, length.out = 100))
     ) +
     ggplot2::geom_vline(xintercept = 0) +
@@ -828,16 +1010,140 @@ gg_arma <- function(data){
 #' @return A ggplot object of the impulse responses.
 #'
 #' @export
-gg_irf <- function(data, y = all_of(measured_vars(data))){
+gg_irf <- function(data, y = all_of(measured_vars(data))) {
+  # Guide users from {feasts} to {ggtime}
+  ggtime_migrate_deprecate(match.call(), "feasts", "0.4.2")
+
   kv <- key_vars(data)
-  if(is_empty(kv)) kv <- NULL
+  if (is_empty(kv)) {
+    kv <- NULL
+  }
   data <- tidyr::pivot_longer(
-    data, {{y}},
-    names_to = ".variable", values_to = ".response"
+    data,
+    {{ y }},
+    names_to = ".variable",
+    values_to = ".response"
   )
   ggplot(data) +
     geom_line(ggplot2::aes_string(x = index_var(data), y = ".response")) +
     ggplot2::geom_hline(yintercept = 0, linetype = "dashed") +
     facet_grid(vars(!!!syms(kv)), vars(!!sym(".variable"))) +
     ggplot2::labs(y = "Impulse response", x = NULL)
+}
+
+#' Auto- and Cross- Covariance and -Correlation plots
+#'
+#' Produces an appropriate plot for the result of  [`feasts::ACF()`], [`feasts::PACF()`], or [`feasts::CCF()`].
+#'
+#' @param object A tbl_cf object (the result [`feasts::ACF()`], [`feasts::PACF()`], or [`feasts::CCF()`]).
+#' @param level The level of confidence for the blue dashed lines.
+#' @param ... Unused.
+#'
+#' @return A ggplot object showing the correlations.
+#'
+#' @importFrom ggplot2 ggplot geom_hline xlab ylab ggtitle vars
+#' @importFrom stats qnorm
+#' @export
+autoplot.tbl_cf <- function(object, level = 95, ...) {
+  # Guide users from {feasts} to {ggtime}
+  ggtime_migrate_deprecate(match.call(), "feasts", "0.4.2")
+
+  cf_type <- colnames(object)[colnames(object) %in% c("acf", "pacf", "ccf")]
+  plot_aes <- ggplot2::aes(
+    x = !!sym("lag"),
+    y = !!sym(cf_type)
+  )
+  interval <- interval(object)
+
+  if (length(level) > 1) {
+    abort(
+      "Only one confidence interval is currently supported for this autoplot."
+    )
+  }
+
+  itvl_fmt <- utils::getS3method(
+    "format",
+    "interval",
+    envir = getNamespace("tsibble")
+  )
+  p <- ggplot(object, plot_aes) +
+    geom_segment(aes(xend = !!sym("lag"), yend = 0)) +
+    geom_hline(yintercept = 0) +
+    xlab(paste0("lag [", itvl_fmt(interval), "]"))
+
+  if (!is.null(level)) {
+    conf_int <- object %@%
+      "num_obs" %>%
+      mutate(
+        upper = qnorm((1 + (level / 100)) / 2) / sqrt(!!sym(".len")),
+        lower = !!parse_expr("-upper")
+      ) %>%
+      gather("type", ".ci", !!!syms(c("upper", "lower")))
+    p <- p +
+      geom_hline(
+        aes(yintercept = !!sym(".ci"), group = !!sym("type")),
+        data = conf_int,
+        colour = "blue",
+        linetype = "dashed"
+      )
+  }
+
+  if (n_keys(object) > 1) {
+    p <- p + facet_grid(rows = vars(!!!key(object)))
+  }
+
+  p
+}
+
+#' @importFrom ggplot2 scale_type
+#' @export
+scale_type.cf_lag <- function(x) c("cf_lag", "continuous")
+
+#' lagged datetime scales
+#' This set of scales defines new scales for lagged time structures.
+#'
+#' @param ... Further arguments to be passed on to scale_x_continuous()
+#'
+#' @return A ggproto object inheriting from `Scale`
+#'
+#' @keywords internal
+#' @name scale_cf_lag
+#' @rdname scale_cf_lag
+#' @export
+scale_x_cf_lag <- function(...) {
+  scale <- ggplot2::ggproto(
+    "ScaleContinuousLag",
+    ggplot2::scale_x_continuous(...),
+    train = function(self, x) {
+      if (length(x) == 0) {
+        return()
+      }
+      self$range$train(vctrs::vec_data(x))
+      if (!is.null(gap <- attr(x, "interval"))) {
+        self$interval <- gap
+        freq <- get_frequencies(NULL, gap, .auto = "all")
+        self$frequency <- min(freq[freq > 3] %0% NA)
+      }
+    },
+    get_breaks = function(self, limits = self$get_limits()) {
+      if (inherits(self$breaks, "waiver") && !is.na(self$frequency)) {
+        freq <- self$frequency
+        lags <- ceiling(limits[1]):floor(limits[2])
+        # nlags <- length(lags)
+        # np <- nlags / freq
+        self$breaks <- lags[lags %% (freq / 2) == 0]
+      }
+      ggplot2::ggproto_parent(ggplot2::ScaleContinuous, self)$get_breaks()
+    },
+    get_labels = function(self, breaks = self$get_breaks()) {
+      # if(inherits(self$labels, "waiver")){
+      #   interval_type <- map_lgl(self$interval, ~.x!=0)
+      #   self$labels <- breaks
+      #   #suffix <- toupper(names(self$interval)[interval_type])
+      #   #self$labels <- paste(breaks*as.numeric(self$interval[interval_type]), paste0(suffix, ifelse(breaks!=0, "S", "")))
+      # }
+      ggplot2::ggproto_parent(ggplot2::ScaleContinuous, self)$get_labels()
+    }
+  )
+  scale
 }
