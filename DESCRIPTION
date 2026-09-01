@@ -1,7 +1,7 @@
 Package: ggtime
 Title: Grammar of Graphics and Plot Helpers for Time Series
         Visualization
-Version: 0.2.0
+Version: 1.0.0
 Authors@R: c(
       person(
         given = "Mitchell",
@@ -45,16 +45,17 @@ License: GPL (>= 3)
 URL: https://pkg.mitchelloharawild.com/ggtime/,
         https://github.com/mitchelloharawild/ggtime
 Imports: ggplot2, grid, gtable, lifecycle, rlang, scales, tsibble,
-        fabletools, dplyr, lubridate (>= 1.7.1), tidyr, vctrs, cli
+        fabletools, dplyr, lubridate (>= 1.7.1), tidyr, vctrs, cli,
+        vecvec, mixtime (>= 0.3.0), S7, utils
 Suggests: testthat (>= 3.0.0), tsibbledata, feasts, fable, ggrepel,
         roxygen2, ggdist, distributional, vdiffr, svglite, fontquiver,
         sysfonts, showtext
 Config/testthat/edition: 3
 Encoding: UTF-8
-RoxygenNote: 7.3.3
 BugReports: https://github.com/mitchelloharawild/ggtime/issues
+Config/roxygen2/version: 8.0.0
 NeedsCompilation: no
-Packaged: 2026-02-09 07:51:23 UTC; mitchell
+Packaged: 2026-08-24 14:22:21 UTC; mitchell
 Author: Mitchell O'Hara-Wild [aut, cre] (ORCID:
     <https://orcid.org/0000-0001-6729-7695>),
   Cynthia A. Huang [aut] (ORCID: <https://orcid.org/0000-0002-9218-987X>),
@@ -63,4 +64,4 @@ Author: Mitchell O'Hara-Wild [aut, cre] (ORCID:
   Earo Wang [ctb] (ORCID: <https://orcid.org/0000-0001-6448-5260>)
 Maintainer: Mitchell O'Hara-Wild <mail@mitchelloharawild.com>
 Repository: CRAN
-Date/Publication: 2026-02-09 08:10:02 UTC
+Date/Publication: 2026-09-01 13:10:19 UTC

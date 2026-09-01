@@ -235,7 +235,7 @@ guess_plot_var <- function(x, y) {
 #' Hyndman and Athanasopoulos (2019) Forecasting: principles and practice,
 #'  3rd edition, OTexts: Melbourne, Australia. https://OTexts.com/fpp3/
 #'
-#' @examples
+#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE)
 #' library(tsibble)
 #' library(dplyr)
 #' tsibbledata::aus_retail %>%
@@ -491,7 +491,7 @@ gg_season <- function(
 #' Hyndman and Athanasopoulos (2019) Forecasting: principles and practice,
 #'  3rd edition, OTexts: Melbourne, Australia. https://OTexts.com/fpp3/
 #'
-#' @examples
+#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE)
 #' library(tsibble)
 #' library(dplyr)
 #' tsibbledata::aus_retail %>%
@@ -589,7 +589,7 @@ gg_subseries <- function(data, y = NULL, period = NULL, ...) {
 #'
 #' @return A ggplot object showing a lag plot of a time series.
 #'
-#' @examples
+#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE)
 #' library(tsibble)
 #' library(dplyr)
 #' tsibbledata::aus_retail %>%
@@ -703,7 +703,7 @@ gg_lag <- function(
 #' and practice}, 3rd edition, OTexts: Melbourne, Australia.
 #' \url{https://OTexts.com/fpp3/}
 #'
-#' @examples
+#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE)
 #' library(tsibble)
 #' library(dplyr)
 #' tsibbledata::aus_retail %>%
@@ -837,14 +837,12 @@ gg_tsdisplay <- function(
 #' and practice}, 3rd edition, OTexts: Melbourne, Australia.
 #' \url{https://OTexts.com/fpp3/}
 #'
-#' @examples
-#' if (requireNamespace("fable", quietly = TRUE)) {
+#' @examplesIf requireNamespace("fable", quietly = TRUE) && requireNamespace("tsibbledata", quietly = TRUE)
 #' library(fable)
 #'
 #' tsibbledata::aus_production %>%
 #'   model(ETS(Beer)) %>%
 #'   gg_tsresiduals()
-#' }
 #'
 #' @importFrom ggplot2 ggplot aes geom_point geom_histogram ylim
 #' @importFrom stats na.exclude complete.cases
@@ -888,8 +886,10 @@ gg_tsresiduals <- function(
   e1
 }
 
-#' @export
-chooseOpsMethod.gg_tsensemble <- function(x, y, mx, my, cl, reverse) {
+# Registered as the `chooseOpsMethod()` method for `gg_tsensemble` by
+# `.onLoad()`, since the generic only exists from R 4.3.0.
+# Named with an underscore rather than a dot to avoid roxygen S3 method noise.
+chooseOpsMethod_gg_tsensemble <- function(x, y, mx, my, cl, reverse) {
   # Always use the gg_tsensemble method
   TRUE
 }
@@ -935,8 +935,7 @@ grid.draw.gg_tsensemble <- function(x, recording = TRUE) {
 #'
 #' @return A ggplot object the characteristic roots from ARMA components.
 #'
-#' @examples
-#' if (requireNamespace("fable", quietly = TRUE)) {
+#' @examplesIf requireNamespace("fable", quietly = TRUE) && requireNamespace("tsibbledata", quietly = TRUE)
 #' library(fable)
 #' library(tsibble)
 #' library(dplyr)
@@ -948,7 +947,6 @@ grid.draw.gg_tsensemble <- function(x, recording = TRUE) {
 #'   ) %>%
 #'   model(ARIMA(Turnover ~ pdq(0,1,1) + PDQ(0,1,1))) %>%
 #'   gg_arma()
-#' }
 #' @export
 gg_arma <- function(data) {
   # Guide users from {feasts} to {ggtime}
