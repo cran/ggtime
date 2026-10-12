@@ -28,10 +28,11 @@ automatically selected from the data.}
 
 \item{period}{The seasonal period to display. If NULL (default),
 the largest frequency in the data is used. If numeric, it represents
-the frequency times the interval between observations. If a string
-(e.g., "1y" for 1 year, "3m" for 3 months, "1d" for 1 day,
-"1h" for 1 hour, "1min" for 1 minute, "1s" for 1 second),
-it's converted to a Period class object from the lubridate package.
+the frequency times the interval between observations. If a string, it is a
+whole number of a single unit (e.g., "year", "2 weeks", "1y" for 1 year,
+"3m" for 3 months, "1d" for 1 day, "1h" for 1 hour, "1min" for 1 minute,
+"1s" for 1 second). A mixtime duration (e.g. \code{mixtime::weeks(2L)}) or
+granule can also be used.
 Note that the data must have at least one observation per seasonal period,
 and the period cannot be smaller than the observation interval.}
 
@@ -47,7 +48,8 @@ to always colour the lines. If labels are used, then max_col will be ignored.}
 
 \item{pal}{A colour palette to be used.}
 
-\item{polar}{If TRUE, the season plot will be shown on polar coordinates.}
+\item{polar}{If TRUE, the season plot will be shown on polar coordinates
+(looping \code{\link[ggplot2:coord_radial]{ggplot2::coord_radial()}}).}
 
 \item{labels}{Position of the labels for seasonal period identifier.}
 
@@ -66,8 +68,14 @@ time series plot, except the x-axis shows data from within each season. This
 plot type allows the underlying seasonal pattern to be seen more clearly,
 and is especially useful in identifying years in which the pattern changes.
 }
+\details{
+The seasonal plot is drawn with \code{\link[=coord_loop]{coord_loop()}}, which loops the continuous
+time axis around each seasonal period. Since time remains continuous, the
+line connecting one season to the next (e.g. December to January) is drawn
+too, split between the right and left margins of the plot.
+}
 \examples{
-\dontshow{if (requireNamespace("tsibbledata", quietly = TRUE)) withAutoprint(\{ # examplesIf}
+\dontshow{if (requireNamespace("tsibbledata", quietly = TRUE) && utils::packageVersion("mixtime") > "0.3.0") withAutoprint(\{ # examplesIf}
 library(tsibble)
 library(dplyr)
 tsibbledata::aus_retail \%>\%

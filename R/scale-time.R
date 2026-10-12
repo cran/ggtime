@@ -13,13 +13,15 @@
 #' @inheritParams ggplot2::scale_x_date
 #' @param time_breaks A duration giving the distance between breaks, such as
 #' `mixtime::weeks(2L)` or `mixtime::years(10L)`. If both `breaks` and
-#' `time_breaks` are specified, `time_breaks` wins.
+#' `time_breaks` are specified, `time_breaks` wins. Each break is positioned
+#' within its granule by `align_discrete`, as data of that granule would be
+#' (e.g. monthly breaks fall mid-month, on monthly observations).
 #' @param time_minor_breaks A duration giving the distance between minor
 #' breaks, such as `mixtime::weeks(2L)` or `mixtime::years(10L)`. If both
 #' `minor_breaks` and `time_minor_breaks` are specified, `time_minor_breaks`
 #' wins.
 #' @param time_chronon A time granule that defines the common chronon to use for
-#' mixed granularity (e.g. `mixtime::tu_day(1L)`). The default automatically
+#' mixed granularity (e.g. `mixtime::cal_gregorian$day(1L)`). The default automatically
 #' selects it as the finest chronon that all time points can be represented in.
 #' @param align_discrete Either a single number between 0 and 1, or a
 #'   `aes_nudge()` object, defining how to align coarser granularities
@@ -101,9 +103,9 @@
 #' will be daily, with the monthly points aligned according to the `align_discrete`
 #' argument. If multiple time zones are present, the common time zone will
 #' default to UTC. The common time scale can be manually specified using the
-#' `time_chronon` argument, which accepts a `mixtime::time_unit`.
+#' `time_chronon` argument, which accepts a time granule.
 #'
-#' @examples
+#' @examplesIf utils::packageVersion("mixtime") > "0.3.0"
 #' library(ggplot2)
 #' library(dplyr)
 #' uad_month <- tibble(
@@ -390,14 +392,21 @@ scale_linewidth_mixtime <- function(
 #'
 #' The mixtime equivalent of [scales::breaks_width()]: a function factory
 #' returning a break function that walks the scale's limits in steps of `width`
-#' via [scales::fullseq()]. Unlike `breaks_width()` there is no `offset`, which
-#' spares mixtime an `offset_by()` method for a shift that is always zero.
+#' via [scales::fullseq()].
+#'
+#' Each break is a time of `width`'s granule, so it is positioned within that
+#' granule by `align` just as the scale positions discrete time (see
+#' `align_discrete`), keeping breaks on the data rather than between it.
 #' @param width The break width, as a duration or a time granule.
+#' @param align The position of each break within its granule, from 0 (its
+#'   start) to 1 (its end).
 #' @noRd
-breaks_time_seq <- function(width) {
+breaks_time_seq <- function(width, align = 0) {
   force(width)
   function(x) {
-    scales::fullseq(x, width)
+    # `fullseq()` steps in single units of `width`'s granule, so this is
+    # a position within the unit each break starts.
+    scales::fullseq(x, width) + align
   }
 }
 
@@ -461,7 +470,12 @@ mixtime_scale <- function(
 
   if (!is_waiver(time_breaks)) {
     time_breaks <- duration_as_granule(time_breaks, call = call)
-    breaks <- breaks_time_seq(time_breaks)
+    # Breaks are aligned like the scale's own discrete time points.
+    align <- align_discrete
+    if (is.function(align)) {
+      align <- align(aesthetics[1])
+    }
+    breaks <- breaks_time_seq(time_breaks, align)
   }
   if (!is_waiver(time_minor_breaks)) {
     time_minor_breaks <- duration_as_granule(time_minor_breaks, call = call)
@@ -609,6 +623,8 @@ ScaleContinuousMixtime <- ggproto(
     # Store common time type for default backtransformation, labels, and more.
     # Maybe other attributes are needed (e.g. cycle for cyclical time)
     if (is_waiver(self$time_chronon)) {
+      # TODO: Use `mixtime::chronon_glb()` once ggtime requires a mixtime
+      # release newer than 0.3.0 (where `chronon_common()` is deprecated).
       self$time_chronon <- mixtime::chronon_common(do.call(c, df[aesthetics]))
     }
 

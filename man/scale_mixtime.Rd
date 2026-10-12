@@ -60,7 +60,9 @@ omitted.}
 
 \item{time_breaks}{A duration giving the distance between breaks, such as
 \code{mixtime::weeks(2L)} or \code{mixtime::years(10L)}. If both \code{breaks} and
-\code{time_breaks} are specified, \code{time_breaks} wins.}
+\code{time_breaks} are specified, \code{time_breaks} wins. Each break is positioned
+within its granule by \code{align_discrete}, as data of that granule would be
+(e.g. monthly breaks fall mid-month, on monthly observations).}
 
 \item{minor_breaks}{One of:
 \itemize{
@@ -94,7 +96,7 @@ notation.
 in \code{vignette("time-format-strings", package = "mixtime")}.}
 
 \item{time_chronon}{A time granule that defines the common chronon to use for
-mixed granularity (e.g. \code{mixtime::tu_day(1L)}). The default automatically
+mixed granularity (e.g. \code{mixtime::cal_gregorian$day(1L)}). The default automatically
 selects it as the finest chronon that all time points can be represented in.}
 
 \item{align_discrete}{Either a single number between 0 and 1, or a
@@ -228,10 +230,11 @@ if the data contains both monthly and daily time points, the common time scale
 will be daily, with the monthly points aligned according to the \code{align_discrete}
 argument. If multiple time zones are present, the common time zone will
 default to UTC. The common time scale can be manually specified using the
-\code{time_chronon} argument, which accepts a \code{mixtime::time_unit}.
+\code{time_chronon} argument, which accepts a time granule.
 }
 
 \examples{
+\dontshow{if (utils::packageVersion("mixtime") > "0.3.0") withAutoprint(\{ # examplesIf}
 library(ggplot2)
 library(dplyr)
 uad_month <- tibble(
@@ -250,5 +253,5 @@ bind_rows(
   ggplot(aes(time, value, color = grain)) +
   geom_line() +
   scale_x_mixtime()
-
+\dontshow{\}) # examplesIf}
 }

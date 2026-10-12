@@ -1,183 +1,5 @@
 globalVariables("all_of")
 
-format_time <- function(x, format, ...) {
-  if (format == "%Y W%V") {
-    return(format(yearweek(x)))
-  }
-  out <- format(x, format = format)
-  if (grepl("%q", format)) {
-    qtr <- 1 + as.numeric(format(as.Date(x), "%m")) %/% 3
-    out <- split(out, qtr) %>%
-      imap(function(x, rpl) gsub("%q", rpl, x)) %>%
-      unsplit(qtr)
-  }
-
-  lvls <- switch(format, `W%V` = sprintf("W%02d", 1:53), unique(out[order(x)]))
-
-  ordered(out, levels = lvls)
-}
-
-tz_units_since <- function(x) {
-  if (!is.null(attr(x, "tz"))) {
-    x <- as.POSIXct(`attr<-`(as.POSIXlt(x), "tzone", "UTC"))
-  }
-  as.double(x)
-}
-
-# Find minimum largest identifier for each group
-# 1. Find largest homogeneous descriptor within groups
-# 2. Return if descriptor is distinct across groups
-# 3. If descriptor varies across groups, add it to list
-# 4. Go to next largest descriptor and repeat from 2.
-time_identifier <- function(idx, period, base = NULL, within = NULL, interval) {
-  if (is.null(period)) {
-    return(rep(NA, length(idx)))
-  }
-
-  # Early return for years in weeks, as years are structured differently in context of weeks
-  if (
-    identical(period, lubridate::years(1)) &&
-      identical(base, lubridate::weeks(1))
-  ) {
-    return(list(facet_id = NA, id = format_time(idx, format = "%G")))
-  }
-
-  grps <- floor_tsibble_date(idx, period)
-
-  facet_grps <- if (!is.null(within)) {
-    time_identifier(
-      time_offset_origin(floor_tsibble_date(idx, period), within),
-      period = period,
-      base = period,
-      interval = period
-    )$id
-  } else {
-    rep_along(idx, FALSE)
-  }
-
-  # Create format groups for each series
-  fmt_idx_grp <- map2(
-    split(idx, facet_grps),
-    split(grps, facet_grps),
-    split
-  )
-
-  formats <- list(
-    Weekday = "%A",
-    # Monthday = "%d",
-    # Yearday = "%j",
-    Week = "W%V",
-    Month = "%b",
-    Year = "%Y",
-    Yearweek = "%G W%V",
-    Yearmonth = "%Y %b",
-    Minute = "%M",
-    Hour = "%H",
-    HourMinute = "%H:%M",
-    Time = "%X",
-    Date = "%x",
-    Datetime = "%x %X"
-  )
-  # Remove unreasonable formats for a given interval
-  if (!is_empty(interval)) {
-    if (interval >= months(1)) {
-      formats <- formats[c("Month", "Year", "Yearmonth", "Date")]
-    } else if (interval >= lubridate::weeks(1)) {
-      formats <- formats[c(
-        "Week",
-        "Month",
-        "Year",
-        "Yearweek",
-        "Yearmonth",
-        "Date"
-      )]
-    } else if (interval >= lubridate::days(1)) {
-      formats <- formats[c(
-        "Weekday",
-        "Week",
-        "Month",
-        "Year",
-        "Yearweek",
-        "Yearmonth",
-        "Date"
-      )]
-    }
-  }
-
-  # Check if the format uniquely identifies the group
-  for (fmt in formats) {
-    for (fct in fmt_idx_grp) {
-      found_format <- FALSE
-      id <- rep(NA_character_, length(fct))
-      for (i in seq_along(fct)) {
-        val <- unique(format_time(fct[[i]], format = fmt))
-        if (length(val) > 1) {
-          break
-        }
-        id[i] <- as.character(val)
-      }
-      if (is.na(id[length(id)])) {
-        break
-      }
-      if (anyDuplicated(id)) {
-        break
-      }
-      found_format <- TRUE
-    }
-    if (found_format) break
-  }
-
-  out <- if (found_format) {
-    format_time(idx, format = fmt)
-  } else {
-    # Default to time ranges
-    map2(fmt_idx_grp, split(grps, facet_grps), function(x, grps) {
-      map(x, function(y) {
-        rep(paste0(range(y), collapse = " - "), length(y))
-      }) %>%
-        unsplit(as.factor(format(grps)))
-    }) %>%
-      unsplit(facet_grps) %>%
-      ordered()
-  }
-  list(
-    facet_id = if (!is.null(within)) facet_grps else NA,
-    id = out
-  )
-}
-
-within_time_identifier <- function(x) {
-  formats <- list(
-    Year = "%Y",
-    Quarter = "Q%q",
-    Month = "%b",
-    Week = "W%V",
-    Weekday = "%A",
-    Monthday = "%d",
-    Yearquarter = "%Y Q%q",
-    Yearmonth = "%Y %b",
-    Yearweek = "%G W%V",
-    Yearday = "%j",
-    Date = "%x",
-    Hour = "%H",
-    Minute = "%M",
-    HourMinute = "%H:%M",
-    Time = "%X",
-    Datetime = "%x %X"
-  )
-
-  y <- x
-  x <- unique(x[!is.na(x)])
-
-  for (fmt in formats) {
-    if (sum(duplicated(format_time(x[-length(x)], format = fmt))) == 0) {
-      break
-    }
-  }
-
-  format_time(y, format = fmt)
-}
-
 guess_plot_var <- function(x, y) {
   if (quo_is_null(enquo(y))) {
     mv <- measured_vars(x)
@@ -204,15 +26,21 @@ guess_plot_var <- function(x, y) {
 #' plot type allows the underlying seasonal pattern to be seen more clearly,
 #' and is especially useful in identifying years in which the pattern changes.
 #'
+#' The seasonal plot is drawn with [coord_loop()], which loops the continuous
+#' time axis around each seasonal period. Since time remains continuous, the
+#' line connecting one season to the next (e.g. December to January) is drawn
+#' too, split between the right and left margins of the plot.
+#'
 #' @param data A tidy time series object (tsibble)
 #' @param y The variable to plot (a bare expression). If NULL, it will
 #' automatically selected from the data.
 #' @param period The seasonal period to display. If NULL (default),
 #' the largest frequency in the data is used. If numeric, it represents
-#' the frequency times the interval between observations. If a string
-#' (e.g., "1y" for 1 year, "3m" for 3 months, "1d" for 1 day,
-#' "1h" for 1 hour, "1min" for 1 minute, "1s" for 1 second),
-#' it's converted to a Period class object from the lubridate package.
+#' the frequency times the interval between observations. If a string, it is a
+#' whole number of a single unit (e.g., "year", "2 weeks", "1y" for 1 year,
+#' "3m" for 3 months, "1d" for 1 day, "1h" for 1 hour, "1min" for 1 minute,
+#' "1s" for 1 second). A mixtime duration (e.g. `mixtime::weeks(2L)`) or
+#' granule can also be used.
 #' Note that the data must have at least one observation per seasonal period,
 #' and the period cannot be smaller than the observation interval.
 #' @param facet_period A secondary seasonal period to facet by
@@ -223,7 +51,8 @@ guess_plot_var <- function(x, y) {
 #' to always colour the lines. If labels are used, then max_col will be ignored.
 #' @param max_col_discrete The maximum number of colours to show using a discrete colour scale.
 #' @param pal A colour palette to be used.
-#' @param polar If TRUE, the season plot will be shown on polar coordinates.
+#' @param polar If TRUE, the season plot will be shown on polar coordinates
+#' (looping [ggplot2::coord_radial()]).
 #' @param labels Position of the labels for seasonal period identifier.
 #' @param labels_repel If TRUE, the seasonal period identifying labels will be repelled with the ggrepel package.
 #' @param labels_left_nudge,labels_right_nudge Allows seasonal period identifying labels to be nudged to the left or right from their default position.
@@ -235,7 +64,7 @@ guess_plot_var <- function(x, y) {
 #' Hyndman and Athanasopoulos (2019) Forecasting: principles and practice,
 #'  3rd edition, OTexts: Melbourne, Australia. https://OTexts.com/fpp3/
 #'
-#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE)
+#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE) && utils::packageVersion("mixtime") > "0.3.0"
 #' library(tsibble)
 #' library(dplyr)
 #' tsibbledata::aus_retail %>%
@@ -246,7 +75,6 @@ guess_plot_var <- function(x, y) {
 #'   gg_season(Turnover)
 #'
 #' @importFrom ggplot2 ggplot aes geom_line
-#' @importFrom fabletools get_frequencies
 #' @importFrom dplyr group_by summarise mutate filter
 #' @export
 gg_season <- function(
@@ -271,64 +99,37 @@ gg_season <- function(
 
   labels <- match.arg(labels)
   check_gaps(data)
+  if (NROW(data) == 0) {
+    abort(
+      "The data must contain at least one observation to identify seasonal periods."
+    )
+  }
   idx <- index_var(data)
   n_key <- n_keys(data)
   keys <- key(data)
-  ts_interval <- interval_to_period(interval(data))
+  ts_interval <- interval_as_granule(interval(data))
 
-  if (is.null(period)) {
-    period <- names(get_frequencies(period, data, .auto = "largest"))
-  }
-  if (is.numeric(period)) {
-    period <- period * ts_interval
-  }
-  period <- lubridate::as.period(period)
-  if (period <= ts_interval) {
-    abort("The data must contain at least one observation per seasonal period.")
-  }
-
-  if (!is.null(facet_period)) {
-    if (is.numeric(facet_period)) {
-      facet_period <- facet_period * ts_interval
-    }
-    facet_period <- lubridate::as.period(facet_period)
-
-    if (facet_period <= ts_interval) {
-      abort(
-        "The data must contain at least one observation per seasonal period."
-      )
-    }
-  }
+  period <- season_period(period, ts_interval)
+  facet_period <- season_period(facet_period, ts_interval, "facet_period")
 
   data <- as_tibble(data)
-  data[c("facet_id", "id")] <- time_identifier(
-    data[[idx]],
-    period,
-    within = facet_period,
-    interval = ts_interval
-  )
-  data[idx] <- time_offset_origin(data[[idx]], period)
-
-  if (polar) {
-    extra_x <- data %>%
-      group_by(!!sym("facet_id"), !!sym("id")) %>%
-      summarise(
-        !!idx := max(as.Date(!!sym(idx))) + ts_interval - .Machine$double.eps,
-        !!as_name(y) := (!!y)[[which.min(!!sym(idx))]]
-      ) %>%
-      group_by(!!sym("facet_id")) %>%
-      mutate(!!as_name(y) := dplyr::lead(!!y)) %>%
-      filter(!is.na(!!y))
-    data <- dplyr::bind_rows(data, extra_x)
+  # Time stays continuous, and is looped over the period by `coord_loop()`
+  data[[idx]] <- as_mixtime_index(data[[idx]])
+  data[["id"]] <- season_id(data[[idx]], period)
+  data[["facet_id"]] <- if (is.null(facet_period)) {
+    FALSE
+  } else {
+    season_id(data[[idx]], facet_period)
   }
 
   num_ids <- length(unique(data[["id"]]))
 
+  # A single line per series, so the connection between seasons is drawn
+  # (and cut by `coord_loop()` into the panel's margins)
   mapping <- aes(
     x = !!sym(idx),
     y = !!y,
-    colour = unclass(!!sym("id")),
-    group = !!sym("id")
+    colour = unclass(!!sym("id"))
   )
 
   if (num_ids > max_col) {
@@ -337,6 +138,7 @@ gg_season <- function(
 
   p <- ggplot(data, mapping) +
     geom_line(...) +
+    scale_x_mixtime() +
     ggplot2::labs(colour = NULL)
 
   if (num_ids <= max_col) {
@@ -372,59 +174,17 @@ gg_season <- function(
       )
   }
 
-  if (inherits(data[[idx]], "Date")) {
-    p <- p +
-      ggplot2::scale_x_date(
-        breaks = function(limit) {
-          breaks <- if (suppressMessages(len <- period / ts_interval) <= 12) {
-            ggplot2::scale_x_date()$trans$breaks(limit, n = len)
-          } else {
-            ggplot2::scale_x_date()$trans$breaks(limit)
-          }
-          unique(time_offset_origin(within_bounds(breaks, limit), period))
-        },
-        labels = within_time_identifier
-      )
-  } else if (inherits(data[[idx]], "POSIXct")) {
-    p <- p +
-      ggplot2::scale_x_datetime(
-        breaks = function(limit) {
-          breaks <- if (period == lubridate::weeks(1)) {
-            ggplot2::scale_x_datetime()$trans$breaks(limit, n = 7)
-          } else {
-            ggplot2::scale_x_datetime()$trans$breaks(limit)
-          }
-          unique(time_offset_origin(within_bounds(breaks, limit), period))
-        },
-        labels = within_time_identifier
-      )
-  } else {
-    scale_fn <- paste0("scale_x_", ggplot2::scale_type(data[[idx]])[1])
-    scale_fn <- if (exists(scale_fn, parent.frame(), mode = "function")) {
-      get(scale_fn, parent.frame(), mode = "function")
+  p <- p +
+    if (polar) {
+      coord_loop(time_loops = period, coord = ggplot2::coord_radial())
     } else {
-      get(scale_fn, asNamespace("feasts"), mode = "function")
-    }
-    p <- p +
-      scale_fn(
-        breaks = function(limit) {
-          breaks <- if (suppressMessages(len <- period / ts_interval) <= 12) {
-            vctrs::vec_restore(
-              ggplot2::scale_x_date()$trans$breaks(as.Date(limit), n = len),
-              limit
-            )
-          } else {
-            scale_fn()$trans$breaks(limit)
-          }
-          unique(time_offset_origin(within_bounds(breaks, limit), period))
-        },
-        labels = within_time_identifier
+      # Loops fill the time axis exactly unless room is needed for labels,
+      # but the value axis is expanded as usual (top, right, bottom, left).
+      coord_loop(
+        time_loops = period,
+        expand = c(TRUE, labels != "none", TRUE, labels != "none")
       )
-  }
-
-  if (polar) {
-    p <- p + ggplot2::coord_polar()
-  }
+    }
 
   if (labels != "none") {
     labeller <- if (labels_repel) {
@@ -484,6 +244,10 @@ gg_season <- function(
 #' similar to a seasonal plot ([`gg_season()`]), and
 #'
 #' @inheritParams gg_season
+#' @param period The seasonal period to facet by. If NULL (default), the
+#' smallest common seasonal period of the data is used (e.g. a week for daily
+#' data, a day for hourly data). Otherwise, a string or duration as described
+#' in [gg_season()].
 #'
 #' @return A ggplot object showing a seasonal subseries plot of a time series.
 #'
@@ -491,7 +255,7 @@ gg_season <- function(
 #' Hyndman and Athanasopoulos (2019) Forecasting: principles and practice,
 #'  3rd edition, OTexts: Melbourne, Australia. https://OTexts.com/fpp3/
 #'
-#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE)
+#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE) && utils::packageVersion("mixtime") > "0.3.0"
 #' library(tsibble)
 #' library(dplyr)
 #' tsibbledata::aus_retail %>%
@@ -508,69 +272,49 @@ gg_subseries <- function(data, y = NULL, period = NULL, ...) {
   ggtime_migrate_deprecate(match.call(), "feasts", "0.4.2")
 
   y <- guess_plot_var(data, !!enquo(y))
-  n_key <- n_keys(data)
   keys <- key(data)
   check_gaps(data)
-  idx <- index(data)
-  ts_interval <- interval_to_period(interval(data))
+  idx <- index_var(data)
+  ts_interval <- interval_as_granule(interval(data))
 
-  if (is.null(period)) {
-    period <- names(get_frequencies(period, data, .auto = "largest"))
-  }
-  if (is.numeric(period)) {
-    period <- period * ts_interval
-  }
-  period <- lubridate::as.period(period)
-  if (period <= 1) {
-    abort("The data must contain at least one observation per seasonal period.")
-  }
+  # Each facet is a season position, so a smaller period gives fewer facets
+  # with more observations in each
+  period <- season_period(period, ts_interval, auto = "smallest")
 
-  data <- as_tibble(data) %>%
+  data <- as_tibble(data)
+  data[[idx]] <- as_mixtime_index(data[[idx]])
+  data <- data %>%
     mutate(
-      id = time_offset_origin(!!idx, !!period),
-      !!idx := !!idx,
+      id = season_position_factor(!!sym(idx), period),
       .yint = !!y
     ) %>%
     group_by(!!sym("id"), !!!keys) %>%
     mutate(.yint = mean(!!sym(".yint"), na.rm = TRUE))
 
-  fct_labeller <- if (
-    inherits(
-      data[["id"]],
-      c("yearquarter", "yearmonth", "yearweek", "POSIXt", "Date")
-    )
-  ) {
-    within_time_identifier
-  } else if (is.numeric(data[["id"]])) {
-    function(x) format(x - 1969)
-  } else {
-    format
-  }
+  # Break at the start of every few seasons, so each facet has only a handful
+  n_seasons <- length(unique(mixtime::time_floor(data[[idx]], period)))
+  break_step <- scale_granule(period, subseries_break_step(n_seasons))
 
-  p <- ggplot(data, aes(x = !!idx, y = !!y)) +
+  ggplot(data, aes(x = !!sym(idx), y = !!y)) +
     geom_line(...) +
     facet_grid(
       rows = vars(!!!lapply(keys, function(x) expr(format(!!x)))),
-      cols = vars(fct_labeller(!!sym("id"))),
+      cols = vars(!!sym("id")),
       scales = "free_y"
     ) +
-    ggplot2::geom_hline(aes(yintercept = !!sym(".yint")), colour = "blue")
+    ggplot2::geom_hline(aes(yintercept = !!sym(".yint")), colour = "blue") +
+    scale_x_mixtime(
+      time_breaks = break_step,
+      labels = function(x) time_labels_at(x, chronon = period)
+    ) +
+    ggplot2::theme(axis.text.x.bottom = ggplot2::element_text(angle = 90))
+}
 
-  if (inherits(data[[as_name(idx)]], "Date")) {
-    p <- p + ggplot2::scale_x_date(labels = within_time_identifier)
-  } else if (inherits(data[[as_name(idx)]], "POSIXct")) {
-    p <- p + ggplot2::scale_x_datetime(labels = within_time_identifier)
-  } else {
-    scale_fn <- paste0("scale_x_", ggplot2::scale_type(data[[as_name(idx)]])[1])
-    scale_fn <- if (exists(scale_fn, parent.frame(), mode = "function")) {
-      get(scale_fn, parent.frame(), mode = "function")
-    } else {
-      get(scale_fn, asNamespace("feasts"), mode = "function")
-    }
-    p <- p + scale_fn(labels = within_time_identifier)
-  }
-
-  p + ggplot2::theme(axis.text.x.bottom = ggplot2::element_text(angle = 90))
+# The number of seasons between subseries axis breaks: a 1-2-5 step giving at
+# most `max_breaks` breaks per facet.
+subseries_break_step <- function(n_seasons, max_breaks = 3) {
+  steps <- c(1, 2, 5) * rep(10^(0:5), each = 3)
+  steps[which(n_seasons / steps <= max_breaks)[1]]
 }
 
 
@@ -589,7 +333,7 @@ gg_subseries <- function(data, y = NULL, period = NULL, ...) {
 #'
 #' @return A ggplot object showing a lag plot of a time series.
 #'
-#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE)
+#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE) && utils::packageVersion("mixtime") > "0.3.0"
 #' library(tsibble)
 #' library(dplyr)
 #' tsibbledata::aus_retail %>%
@@ -632,21 +376,36 @@ gg_lag <- function(
     )
   }
 
-  period <- get_frequencies(period, data, .auto = "smallest")
-
-  period_units <- period * default_time_units(interval(data))
+  idx <- index_var(data)
+  ts_interval <- interval_as_granule(interval(data))
+  # Seasons are coloured only for periods with a fixed number of observations,
+  # so that each lag is the same seasonal offset throughout the series
+  period <- if (is.null(period)) {
+    default_period_granule(ts_interval, "smallest", fixed = TRUE)
+  } else {
+    season_period(period, ts_interval)
+  }
+  if (is.null(period)) {
+    # Non-seasonal data (e.g. yearly or weekly) isn't coloured by season
+    frequency <- 1
+  } else {
+    frequency <- observations_per_period(ts_interval, period)
+    if (is.na(frequency)) {
+      abort(
+        "The seasonal period must contain a fixed number of observations (e.g. not days in a month)."
+      )
+    }
+  }
 
   lag_exprs <- map(lags, function(lag) expr(lag(!!y, !!lag))) %>%
     set_names(paste0(".lag_", lags))
 
-  idx <- index(data)
-
   data <- data %>%
     as_tibble %>%
     mutate(
-      season = within_time_identifier(
-        !!idx - period_units * (tz_units_since(!!idx) %/% period_units)
-      ),
+      season = if (!is.null(period)) {
+        season_position_factor(as_mixtime_index(!!sym(idx)), period)
+      },
       !!!lag_exprs
     )
 
@@ -667,7 +426,7 @@ gg_lag <- function(
     filter(!is.na(!!sym(".value")) & !is.na(!!y))
 
   mapping <- aes(x = !!sym(".value"), y = !!y)
-  if (period > 1) {
+  if (!isTRUE(frequency <= 1)) {
     mapping$colour <- sym("season")
   }
 
@@ -703,7 +462,7 @@ gg_lag <- function(
 #' and practice}, 3rd edition, OTexts: Melbourne, Australia.
 #' \url{https://OTexts.com/fpp3/}
 #'
-#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE)
+#' @examplesIf requireNamespace("tsibbledata", quietly = TRUE) && utils::packageVersion("mixtime") > "0.3.0"
 #' library(tsibble)
 #' library(dplyr)
 #' tsibbledata::aus_retail %>%
@@ -744,8 +503,7 @@ gg_tsdisplay <- function(
 
   plot_type <- match.arg(plot_type)
   if (plot_type == "auto") {
-    period <- get_frequencies(NULL, data, .auto = "all")
-    if (all(period <= 1)) {
+    if (!interval_is_seasonal(interval_as_granule(interval(data)))) {
       plot_type <- if (any(is.na(eval_tidy(y, data = data)))) {
         "partial"
       } else {
@@ -837,7 +595,7 @@ gg_tsdisplay <- function(
 #' and practice}, 3rd edition, OTexts: Melbourne, Australia.
 #' \url{https://OTexts.com/fpp3/}
 #'
-#' @examplesIf requireNamespace("fable", quietly = TRUE) && requireNamespace("tsibbledata", quietly = TRUE)
+#' @examplesIf requireNamespace("fable", quietly = TRUE) && requireNamespace("tsibbledata", quietly = TRUE) && utils::packageVersion("mixtime") > "0.3.0"
 #' library(fable)
 #'
 #' tsibbledata::aus_production %>%
@@ -1052,6 +810,14 @@ autoplot.tbl_cf <- function(object, level = 95, ...) {
     y = !!sym(cf_type)
   )
   interval <- interval(object)
+  num_obs <- object %@% "num_obs"
+  keys <- key(object)
+  n_key <- n_keys(object)
+
+  # Plot lags as mixtime durations (e.g. "12 months") rather than a count.
+  # Lags may be a `cf_lag`, plain numbers, or already mixtime durations.
+  object <- as_tibble(object)
+  object[["lag"]] <- lag_to_duration(object[["lag"]], interval)
 
   if (length(level) > 1) {
     abort(
@@ -1059,19 +825,19 @@ autoplot.tbl_cf <- function(object, level = 95, ...) {
     )
   }
 
-  itvl_fmt <- utils::getS3method(
-    "format",
-    "interval",
-    envir = getNamespace("tsibble")
-  )
   p <- ggplot(object, plot_aes) +
     geom_segment(aes(xend = !!sym("lag"), yend = 0)) +
     geom_hline(yintercept = 0) +
-    xlab(paste0("lag [", itvl_fmt(interval), "]"))
+    xlab(paste0("lag [", format_interval(interval), "]"))
+
+  # An explicit scale, as mixtime's default scale lookup requires ggtime to be
+  # attached rather than only loaded (e.g. when called via `feasts::`)
+  if (mixtime::is_mixtime(object[["lag"]])) {
+    p <- p + scale_x_mixtime()
+  }
 
   if (!is.null(level)) {
-    conf_int <- object %@%
-      "num_obs" %>%
+    conf_int <- num_obs %>%
       mutate(
         upper = qnorm((1 + (level / 100)) / 2) / sqrt(!!sym(".len")),
         lower = !!parse_expr("-upper")
@@ -1086,8 +852,8 @@ autoplot.tbl_cf <- function(object, level = 95, ...) {
       )
   }
 
-  if (n_keys(object) > 1) {
-    p <- p + facet_grid(rows = vars(!!!key(object)))
+  if (n_key > 1) {
+    p <- p + facet_grid(rows = vars(!!!keys))
   }
 
   p
@@ -1107,6 +873,7 @@ scale_type.cf_lag <- function(x) c("cf_lag", "continuous")
 #' @keywords internal
 #' @name scale_cf_lag
 #' @rdname scale_cf_lag
+#' @importFrom fabletools get_frequencies
 #' @export
 scale_x_cf_lag <- function(...) {
   scale <- ggplot2::ggproto(

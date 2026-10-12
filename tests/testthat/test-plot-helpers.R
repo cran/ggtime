@@ -6,6 +6,7 @@ tsbl_ped <- dplyr::filter(
 )
 
 test_that("gg_season() plots", {
+  skip_if_cran_mixtime()
   p <- gg_season(tsbl_co2, value)
 
   expect_equal(
@@ -45,6 +46,7 @@ test_that("gg_season() plots", {
 
 
 test_that("gg_season() plot labels", {
+  skip_if_cran_mixtime()
   p <- gg_season(tsbl_co2, value, labels = "both")
 
   expect_equal(
@@ -69,6 +71,7 @@ test_that("gg_season() plot labels", {
 })
 
 test_that("gg_season() facets", {
+  skip_if_cran_mixtime()
   p <- gg_season(tsbl_co2, value, facet_period = "10 year", labels = "both")
 
   # expect_equal(
@@ -92,7 +95,76 @@ test_that("gg_season() facets", {
   )
 })
 
+test_that("gg_season() loops time, drawing seasonal connections in the margins", {
+  skip_if_cran_mixtime()
+  p <- gg_season(tsbl_co2, value)
+  expect_s3_class(p$coordinates, "CoordLoop")
+
+  # A single line per series, rather than one per season
+  d <- ggplot2::layer_data(p)
+  expect_length(unique(d$group), 1L)
+
+  # The line between seasons (Dec -> Jan) is cut at the loop boundary, with
+  # each half drawn in the panel's margins
+  b <- ggplot2::ggplot_build(p)
+  coord <- b@layout$coord
+  panel_params <- b@layout$panel_params[[1]]
+  coord$distance(d$x, d$y, panel_params)
+  drawn <- coord$transform(d, panel_params)
+  expect_equal(range(drawn$x), c(0, 1))
+  # The observations themselves (transformed without `distance()`, so as
+  # points rather than a connected line) are centred within their month
+  points <- coord$transform(d, panel_params)
+  expect_equal(range(points$x), c(1 / 24, 23 / 24), tolerance = 0.01)
+
+  p <- gg_season(tsbl_co2, value, polar = TRUE)
+  expect_s3_class(p$coordinates, "CoordRadial")
+  expect_no_error(ggplot2::ggplot_build(p))
+})
+
+test_that("gg_season() supports legacy Date and POSIXct indices", {
+  skip_if_cran_mixtime()
+  daily <- tsibble::tsibble(
+    date = as.Date("2020-01-06") + 0:27,
+    y = rep(1:7, 4),
+    index = date
+  )
+  d <- ggplot2::layer_data(gg_season(daily, y, "week"))
+  expect_equal(d$y, daily$y)
+  expect_equal(as.numeric(table(d$colour)), rep(7, 4))
+
+  p <- gg_season(tsbl_ped, Count, "week")
+  x <- ggplot2::ggplot_build(p)@layout$panel_params[[1]]$x
+  expect_equal(
+    x$get_labels()[!is.na(x$breaks)],
+    c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+  )
+})
+
+test_that("gg_season() breaks the time axis at observations", {
+  skip_if_cran_mixtime()
+  p <- gg_season(tsbl_co2, value)
+  built <- ggplot2::ggplot_build(p)
+  x <- built@layout$panel_params[[1]]$x
+  breaks <- x$breaks[!is.na(x$breaks)]
+  expect_length(breaks, 12)
+  expect_true(all(breaks %in% built@data[[1]]$x))
+})
+
+test_that("gg_season() loops weekly data over ISO week-years", {
+  skip_if_cran_mixtime()
+  weekly <- tsibble::tsibble(
+    week = tsibble::yearweek(as.Date("2019-01-07") + 7 * (0:155)),
+    y = seq_len(156),
+    index = week
+  )
+  p <- gg_season(weekly, y)
+  expect_s3_class(p$coordinates$time_loops, "mixtime::tu_isoyear")
+  expect_no_error(ggplot2::ggplot_build(p))
+})
+
 test_that("gg_subseries() plots", {
+  skip_if_cran_mixtime()
   p <- gg_subseries(tsbl_co2, value)
 
   expect_equal(
@@ -131,6 +203,7 @@ test_that("gg_subseries() plots", {
 })
 
 test_that("gg_lag() plots", {
+  skip_if_cran_mixtime()
   p <- gg_lag(tsbl_co2, value)
 
   expect_equal(
@@ -179,6 +252,7 @@ test_that("gg_lag() plots", {
 })
 
 test_that("gg_tsdisplay() plots", {
+  skip_if_cran_mixtime()
   p <- gg_tsdisplay(tsbl_co2, value)
 
   expect_s3_class(
@@ -283,5 +357,312 @@ test_that("gg_arma() plots", {
   expect_equal(
     p_built$plot$labels[c("x", "y")],
     list(x = "Re(1/root)", y = "Im(1/root)")
+  )
+})
+
+test_that("as_period_granule() parses periods without lubridate", {
+  cal <- mixtime::cal_gregorian
+  expect_equal(as_period_granule("year", NULL), cal$year(1L))
+  expect_equal(as_period_granule("2 weeks", NULL), mixtime::cal_isoweek$week(2L))
+  expect_equal(as_period_granule("1y", NULL), cal$year(1L))
+  expect_equal(as_period_granule("3m", NULL), cal$month(3L))
+  expect_equal(as_period_granule("3M", NULL), cal$month(3L))
+  expect_equal(as_period_granule("10min", NULL), cal$minute(10L))
+  expect_equal(as_period_granule("10 mins", NULL), cal$minute(10L))
+  expect_equal(as_period_granule("Quarter", NULL), cal$quarter(1L))
+  expect_equal(as_period_granule("s", NULL), cal$second(1L))
+  expect_equal(as_period_granule(12, cal$month(1L)), cal$month(12L))
+  expect_equal(
+    as_period_granule(mixtime::weeks(2L), NULL),
+    mixtime::cal_isoweek$week(2L)
+  )
+
+  # lubridate periods are read from their slots
+  expect_equal(as_period_granule(lubridate::years(1), NULL), cal$year(1L))
+  expect_equal(
+    as_period_granule(lubridate::weeks(2), NULL),
+    mixtime::cal_isoweek$week(2L)
+  )
+
+  expect_error(as_period_granule("fortnight", NULL), "must be a number")
+  expect_error(as_period_granule("1d 2h", NULL), "must be a number")
+  expect_error(as_period_granule("1.5 hours", NULL), "must be a number")
+})
+
+mixtime_tsbl <- function(index) {
+  tsibble::tsibble(t = index, y = seq_along(index), index = t)
+}
+
+# tsibble supports mixtime indices with either a granule interval or a
+# `<mixtime_interval>` (an interval record computed from the mixtime index)
+skip_if_no_mixtime_tsibble <- function() {
+  interval <- tryCatch(
+    tsibble::interval(
+      mixtime_tsbl(mixtime::yearmonth(as.Date("2020-01-01") + c(0, 31)))
+    ),
+    error = function(e) NULL
+  )
+  skip_if_not(
+    is_granule(interval) || inherits(interval, "mixtime_interval"),
+    "tsibble doesn't support mixtime indices"
+  )
+}
+
+test_that("gg_season() and gg_subseries() support mixtime indices", {
+  skip_if_cran_mixtime()
+  skip_if_no_mixtime_tsibble()
+  monthly <- mixtime_tsbl(
+    mixtime::yearmonth(seq(as.Date("2018-01-01"), by = "month", length.out = 36))
+  )
+
+  p <- gg_season(monthly, y)
+  d <- ggplot2::layer_data(p)
+  expect_equal(d$y, monthly$y)
+  expect_equal(as.numeric(table(d$colour)), rep(12, 3))
+  expect_no_error(ggplot2::ggplot_build(gg_season(monthly, y, polar = TRUE)))
+  expect_no_error(ggplot2::ggplot_build(gg_season(monthly, y, "2 years")))
+  expect_no_error(ggplot2::ggplot_build(gg_season(monthly, y, 12)))
+  expect_no_error(ggplot2::ggplot_build(
+    gg_season(monthly, y, mixtime::years(1L))
+  ))
+  expect_error(gg_season(monthly, y, 1), "at least one observation")
+
+  p <- gg_subseries(monthly, y)
+  expect_equal(levels(p$data$id), month.abb)
+  expect_no_error(ggplot2::ggplot_build(p))
+
+  daily <- mixtime_tsbl(
+    mixtime::date(seq(as.Date("2020-01-06"), by = "day", length.out = 28))
+  )
+  d <- ggplot2::layer_data(gg_season(daily, y, "week"))
+  expect_equal(as.numeric(table(d$colour)), rep(7, 4))
+  expect_no_error(ggplot2::ggplot_build(gg_subseries(daily, y, "week")))
+})
+
+test_that("autoplot.tbl_ts() labels the axis with the compact interval", {
+  skip_if_no_mixtime_tsibble()
+  monthly <- mixtime_tsbl(
+    mixtime::yearmonth(seq(as.Date("2018-01-01"), by = "month", length.out = 24))
+  )
+  expect_equal(format_interval(tsibble::interval(monthly)), "1M")
+  expect_equal(ggplot2::autoplot(monthly, y)$labels$x, "t [1M]")
+})
+
+test_that("gg_lag() supports mixtime indices", {
+  skip_if_cran_mixtime()
+  skip_if_no_mixtime_tsibble()
+  monthly <- mixtime_tsbl(
+    mixtime::yearmonth(seq(as.Date("2018-01-01"), by = "month", length.out = 36))
+  )
+  p <- gg_lag(monthly, y)
+  expect_equal(levels(p$data$season), month.abb)
+  expect_no_error(ggplot2::ggplot_build(p))
+  expect_no_error(ggplot2::ggplot_build(gg_lag(monthly, y, "year")))
+
+  daily <- mixtime_tsbl(
+    mixtime::date(seq(as.Date("2020-01-06"), by = "day", length.out = 28))
+  )
+  expect_equal(
+    levels(gg_lag(daily, y)$data$season),
+    c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+  )
+
+  hourly <- mixtime_tsbl(
+    mixtime::as_mixtime(as.POSIXct("2020-01-01", tz = "UTC") + 3600 * 0:71)
+  )
+  expect_length(levels(gg_lag(hourly, y)$data$season), 24)
+})
+
+test_that("granule intervals have default seasonal periods", {
+  skip_if_no_mixtime_tsibble()
+  cal <- mixtime::cal_gregorian
+  expect_equal(default_period_granule(cal$month(1L)), cal$year(1L))
+  expect_equal(default_period_granule(cal$day(1L)), cal$year(1L))
+  expect_equal(
+    default_period_granule(cal$day(1L), "smallest"),
+    mixtime::cal_isoweek$week(1L)
+  )
+  expect_equal(default_period_granule(cal$hour(1L), "smallest"), cal$day(1L))
+  expect_null(default_period_granule(cal$year(1L)))
+  expect_true(interval_is_seasonal(cal$month(1L)))
+  expect_false(interval_is_seasonal(cal$year(1L)))
+  expect_false(interval_is_seasonal(NULL))
+  expect_equal(
+    default_period_granule(cal$day(1L), "smallest", fixed = TRUE),
+    mixtime::cal_isoweek$week(1L)
+  )
+  expect_null(
+    default_period_granule(mixtime::cal_isoweek$week(1L), fixed = TRUE)
+  )
+})
+
+test_that("observations_per_period() is NA for irregular cardinalities", {
+  cal <- mixtime::cal_gregorian
+  expect_equal(observations_per_period(cal$month(1L), cal$year(1L)), 12)
+  expect_equal(observations_per_period(cal$hour(1L), cal$day(1L)), 24)
+  expect_equal(observations_per_period(cal$minute(30L), cal$hour(1L)), 2)
+  expect_identical(observations_per_period(cal$day(1L), cal$month(1L)), NA_real_)
+  expect_identical(
+    observations_per_period(mixtime::cal_isoweek$week(1L), cal$year(1L)),
+    NA_real_
+  )
+  expect_identical(observations_per_period(NULL, cal$year(1L)), NA_real_)
+})
+
+test_that("interval_as_granule() converts tsibble intervals to a granule", {
+  cal <- mixtime::cal_gregorian
+  interval_of <- function(index, ...) {
+    tsibble::interval(tsibble::tsibble(t = index, index = t, ...))
+  }
+  months <- seq(as.Date("2020-01-01"), by = "month", length.out = 3)
+  expect_s3_class(
+    interval_as_granule(interval_of(tsibble::yearmonth(months))),
+    "mixtime::tu_month"
+  )
+  expect_s3_class(
+    interval_as_granule(interval_of(as.POSIXct(months[1]) + c(0, 1800, 3600))),
+    "mixtime::tu_minute"
+  )
+  expect_s3_class(interval_as_granule(cal$day(1L)), "mixtime::tu_day")
+  expect_s3_class(
+    interval_as_granule(list(cal$day(1L))),
+    "mixtime::tu_day"
+  )
+
+  # Intervals without a single calendar unit
+  expect_null(interval_as_granule(interval_of(1:3)))
+  expect_null(interval_as_granule(
+    interval_of(months[c(1, 3)], regular = FALSE)
+  ))
+  expect_null(interval_as_granule(list(cal$hour(1L), cal$minute(30L))))
+})
+
+test_that("lag_to_duration() converts lags to mixtime durations", {
+  cal <- mixtime::cal_gregorian
+  lag <- function(x, interval) {
+    vctrs::new_vctr(x, interval = interval, class = "cf_lag")
+  }
+
+  expect_equal(
+    lag_to_duration(lag(0:3, cal$month(1L))),
+    mixtime::duration(c(0, 1, 2, 3), cal$month(1L))
+  )
+  # Lags are counts of the interval, whatever its size
+  expect_equal(
+    format(lag_to_duration(lag(2, cal$hour(3L)))),
+    format(mixtime::duration(2, cal$hour(3L)))
+  )
+  expect_equal(
+    lag_to_duration(lag(1:2, list(cal$day(1L)))),
+    mixtime::duration(c(1, 2), cal$day(1L))
+  )
+  # Without a single regular unit, lags stay as counts
+  expect_equal(lag_to_duration(lag(1:2, NULL)), c(1, 2))
+  expect_equal(lag_to_duration(lag(1:2, list(cal$hour(1L), cal$minute(1L)))), c(1, 2))
+})
+
+test_that("autoplot.tbl_cf() plots lags as mixtime durations", {
+  skip_if_cran_mixtime()
+  skip_if_no_mixtime_tsibble()
+  skip_if_not_installed("feasts")
+  loadNamespace("feasts")
+  monthly <- mixtime_tsbl(mixtime::yearmonth(as.Date("2020-01-01") + c(0, 31)))
+  cf <- tibble::tibble(
+    lag = vctrs::new_vctr(
+      0:12,
+      interval = tsibble::interval(monthly),
+      class = "cf_lag"
+    ),
+    acf = cos(0:12)
+  )
+  cf <- tsibble::new_tsibble(
+    tsibble::as_tsibble(cf, index = "lag"),
+    num_obs = tibble::tibble(.len = 100),
+    class = "tbl_cf"
+  )
+  p <- ggplot2::autoplot(cf)
+  expect_true(mixtime::is_mixtime(p$data$lag))
+  expect_equal(p$labels$x, "lag [1M]")
+  expect_no_error(ggplot2::ggplot_build(p))
+})
+
+test_that("lag_to_duration() passes mixtime durations through", {
+  d <- mixtime::duration(0:3, mixtime::cal_gregorian$month(1L))
+  expect_identical(lag_to_duration(d), d)
+  expect_equal(
+    lag_to_duration(0:3, mixtime::cal_gregorian$month(1L)),
+    mixtime::duration(0:3, mixtime::cal_gregorian$month(1L))
+  )
+})
+
+test_that("autoplot.tbl_cf() accepts a mixtime duration lag index", {
+  skip_if_cran_mixtime()
+  skip_if_no_mixtime_tsibble()
+  cf <- tibble::tibble(
+    lag = mixtime::duration(0:12, mixtime::cal_gregorian$month(1L)),
+    acf = cos(0:12)
+  )
+  cf <- tryCatch(
+    tsibble::new_tsibble(
+      tsibble::as_tsibble(cf, index = "lag"),
+      num_obs = tibble::tibble(.len = 100),
+      class = "tbl_cf"
+    ),
+    error = function(e) skip("tsibble can't index by duration")
+  )
+  p <- ggplot2::autoplot(cf)
+  expect_equal(p$labels$x, "lag [1M]")
+  expect_no_error(ggplot2::ggplot_build(p))
+})
+
+test_that("ACF-based plots support mixtime indices", {
+  skip_if_no_mixtime_tsibble()
+  skip_if_not_installed("feasts")
+  skip_if_not_installed("fable")
+  set.seed(1)
+  indices <- list(
+    monthly = list(
+      index = mixtime::yearmonth(
+        seq(as.Date("2015-01-01"), by = "month", length.out = 60)
+      ),
+      label = "lag [1M]"
+    ),
+    daily = list(
+      index = mixtime::date(
+        seq(as.Date("2020-01-06"), by = "day", length.out = 120)
+      ),
+      label = "lag [1D]"
+    ),
+    hourly = list(
+      index = mixtime::as_mixtime(
+        as.POSIXct("2020-01-01", tz = "UTC") + 3600 * 0:119
+      ),
+      label = "lag [1h]"
+    )
+  )
+  for (x in indices) {
+    data <- mixtime_tsbl(x$index)
+    data$y <- rnorm(nrow(data))
+    acf <- tryCatch(
+      feasts::ACF(data, y),
+      error = function(e) skip("feasts doesn't support mixtime intervals")
+    )
+    p <- ggplot2::autoplot(acf)
+    expect_equal(p$labels$x, x$label)
+    expect_no_error(ggplot2::ggplot_build(p))
+
+    expect_no_error(ggplot2::ggplot_build(gg_lag(data, y)))
+    expect_no_error(gg_tsdisplay(data, y))
+
+    mbl <- fabletools::model(data, fable::NAIVE(y))
+    expect_no_error(gg_tsresiduals(mbl))
+  }
+})
+
+test_that("gg_season() errors clearly on zero-row data", {
+  empty <- dplyr::filter(tsbl_co2, index > max(index))
+  expect_error(
+    gg_season(empty, value),
+    "at least one observation"
   )
 })
